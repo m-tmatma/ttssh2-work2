@@ -138,7 +138,10 @@ BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	ON_MESSAGE(WM_USER_KEYCODE,OnKeyCode)
 	ON_MESSAGE(WM_USER_PROTOCANCEL,OnProtoEnd)
 	ON_COMMAND(ID_FILE_NEWCONNECTION, OnFileNewConnection)
+	ON_COMMAND(ID_FILE_DUPLICATESESSION, OnDuplicateSession)
 	ON_COMMAND(ID_FILE_CYGWINCONNECTION, OnCygwinConnection)
+	ON_COMMAND(ID_FILE_TERATERMMENU, OnTTMenuLaunch)
+	ON_COMMAND(ID_FILE_LOGMEIN, OnLogMeInLaunch)
 	ON_COMMAND(ID_FILE_LOG, OnFileLog)
 	ON_COMMAND(ID_FILE_COMMENTTOLOG, OnCommentToLog)
 	ON_COMMAND(ID_FILE_SENDFILE, OnFileSend)
@@ -165,7 +168,7 @@ BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	ON_COMMAND(ID_EDIT_CLEARSCREEN, OnEditClearScreen)
 	ON_COMMAND(ID_EDIT_CLEARBUFFER, OnEditClearBuffer)
 	ON_COMMAND(ID_EDIT_SELECTALL, OnSelectAllBuffer)
-	ON_COMMAND(ID_EDIT_EXTERNALSETUP, OnExternalSetup)
+	ON_COMMAND(ID_SETUP_ADDITIONALSETTINGS, OnExternalSetup)
 	ON_COMMAND(ID_SETUP_TERMINAL, OnSetupTerminal)
 	ON_COMMAND(ID_SETUP_WINDOW, OnSetupWindow)
 	ON_COMMAND(ID_SETUP_FONT, OnSetupFont)
@@ -331,6 +334,11 @@ CVTWindow::CVTWindow()
   if (LoadTTSET())
     (*ParseParam)(Temp, &ts, &(TopicName[0]));
   FreeTTSET();
+
+  // duplicate sessionの指定があるなら、共有メモリからコピーする (2004.12.7 yutaka)
+  if (ts.DuplicateSession == 1) {
+	  CopyShmemToTTSet(&ts);
+  }
 
   InitKeyboard();
   SetKeyMap();
@@ -615,10 +623,11 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 {
 	if ( SubMenu == FileMenu )
 	{
-		if ( Connecting )
+		if ( Connecting ) {
 			EnableMenuItem(FileMenu,ID_FILE_NEWCONNECTION,MF_BYCOMMAND | MF_GRAYED);
-		else
+		} else {
 			EnableMenuItem(FileMenu,ID_FILE_NEWCONNECTION,MF_BYCOMMAND | MF_ENABLED);
+		}
 
 		if (LogVar!=NULL) { // ログ採取モードの場合
 			EnableMenuItem(FileMenu,ID_FILE_LOG,MF_BYCOMMAND | MF_GRAYED);
@@ -635,13 +644,21 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 			EnableMenuItem(FileMenu,ID_TRANSFER,MF_BYPOSITION | MF_GRAYED); /* Transfer */
 			EnableMenuItem(FileMenu,ID_FILE_CHANGEDIR,MF_BYCOMMAND | MF_GRAYED);
 			EnableMenuItem(FileMenu,ID_FILE_DISCONNECT,MF_BYCOMMAND | MF_GRAYED);
+			EnableMenuItem(FileMenu,ID_FILE_DUPLICATESESSION,MF_BYCOMMAND | MF_GRAYED);
 		}
 		else {
 			EnableMenuItem(FileMenu,ID_FILE_SENDFILE,MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(FileMenu,ID_TRANSFER,MF_BYPOSITION | MF_ENABLED); /* Transfer */
 			EnableMenuItem(FileMenu,ID_FILE_CHANGEDIR,MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(FileMenu,ID_FILE_DISCONNECT,MF_BYCOMMAND | MF_ENABLED);
+			EnableMenuItem(FileMenu,ID_FILE_DUPLICATESESSION,MF_BYCOMMAND | MF_ENABLED);
 		}
+
+		// 新規メニューを追加 (2004.12.5 yutaka)
+		EnableMenuItem(FileMenu,ID_FILE_CYGWINCONNECTION,MF_BYCOMMAND | MF_ENABLED);
+		EnableMenuItem(FileMenu,ID_FILE_TERATERMMENU,MF_BYCOMMAND | MF_ENABLED);
+		EnableMenuItem(FileMenu,ID_FILE_LOGMEIN,MF_BYCOMMAND | MF_ENABLED);
+
 	}
 	else if ( SubMenu == TransMenu )
 	{
@@ -1994,6 +2011,51 @@ void CVTWindow::OnFileNewConnection()
   FreeTTDLG();
 }
 
+
+// すでに開いているセッションの複製を作る
+// (2004.12.6 yutaka)
+void CVTWindow::OnDuplicateSession()
+{
+	char Command[MAX_PATH] = "notepad.exe";
+	char *exec = "ttermpro";
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	// 現在の設定内容を共有メモリへコピーしておく
+	CopyTTSetToShmem(&ts);
+
+	if (ts.TCPPort == 23) { // telnet
+		_snprintf(Command, sizeof(Command), "%s %s:%d /DUPLICATE /nossh", 
+			exec, ts.HostName, ts.TCPPort);
+
+	} else if (ts.TCPPort == 22) { // SSH
+		// ここの処理は TTSSH 側にやらせるべき (2004.12.7 yutaka)
+		_snprintf(Command, sizeof(Command), "%s %s:%d /DUPLICATE /ssh", 
+			exec, ts.HostName, ts.TCPPort);
+
+	} else {
+		return;
+
+	}
+
+	memset(&si, 0, sizeof(si));
+	GetStartupInfo(&si);
+	memset(&pi, 0, sizeof(pi));
+
+	if (CreateProcess(
+			NULL, 
+			Command, 
+			NULL, NULL, FALSE, 0,
+			NULL, NULL,
+			&si, &pi) == 0) {
+		char buf[80];
+		_snprintf(buf, sizeof(buf), "Can't execute TeraTerm. (%d)", GetLastError());
+		::MessageBox(NULL, buf, "ERROR", MB_OK | MB_ICONWARNING);
+	}
+
+}
+
+
 //
 // Connect to local cygwin
 //
@@ -2043,6 +2105,61 @@ found_path:;
 		::MessageBox(NULL, "Can't execute Cygterm.", "ERROR", MB_OK | MB_ICONWARNING);
 	}
 }
+
+
+//
+// TeraTerm Menuの起動
+//
+void CVTWindow::OnTTMenuLaunch()
+{
+	char *exename = "ttpmenu.exe";
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	memset(&si, 0, sizeof(si));
+	GetStartupInfo(&si);
+	memset(&pi, 0, sizeof(pi));
+
+	if (CreateProcess(
+			NULL, 
+			exename, 
+			NULL, NULL, FALSE, 0,
+			NULL, NULL,
+			&si, &pi) == 0) {
+		char buf[80];
+		_snprintf(buf, sizeof(buf), "Can't execute TeraTerm Menu. (%d)", GetLastError());
+		::MessageBox(NULL, buf, "ERROR", MB_OK | MB_ICONWARNING);
+	}
+}
+
+
+//
+// LogMeInの起動
+//
+// URL: http://www.neocom.ca/freeware/LogMeIn/
+//
+void CVTWindow::OnLogMeInLaunch()
+{
+	char *exename = "LogMeIn.exe";
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	memset(&si, 0, sizeof(si));
+	GetStartupInfo(&si);
+	memset(&pi, 0, sizeof(pi));
+
+	if (CreateProcess(
+			NULL, 
+			exename, 
+			NULL, NULL, FALSE, 0,
+			NULL, NULL,
+			&si, &pi) == 0) {
+		char buf[80];
+		_snprintf(buf, sizeof(buf), "Can't execute LogMeIn. (%d)", GetLastError());
+		::MessageBox(NULL, buf, "ERROR", MB_OK | MB_ICONWARNING);
+	}
+}
+
 
 void CVTWindow::OnFileLog()
 {
@@ -2384,6 +2501,9 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 				SendMessage(hWnd, LB_INSERTSTRING, i, (LPARAM)buf);
 			}
 			SetupRGBbox(hDlgWnd, 0);
+
+			// ダイアログにフォーカスを当てる (2004.12.7 yutaka)
+			SetFocus(GetDlgItem(hDlgWnd, IDC_LINECOPY));
 
 			return FALSE;
 
@@ -2766,3 +2886,16 @@ void CVTWindow::OnHelpAbout()
   (*AboutDialog)(HVTWin);
   FreeTTDLG();
 }
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.3  2004/12/07 13:39:54  yutakakn
+ * External SetupをSetupメニュー配下へ移動。
+ * LogMeInの起動メニューを追加。
+ * Duplication sessionメニューを追加。
+ *
+ * Revision 1.2  2004/12/03 15:52:55  yutakakn
+ * FileメニューにTeraTerm Menuの起動エントリを追加。
+ * また、アクセラレータキー(Alt+M)も追加した。
+ *
+ */
