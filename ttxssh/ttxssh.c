@@ -362,7 +362,8 @@ static void read_ssh_options(PTInstVar pvar, PCHAR fileName)
 		read_BOOL_option(fileName, "LocalForwardingIdentityCheck", TRUE);
 
 	// SSH protocol version (2004.10.11 yutaka)
-	settings->ssh_protocol_version = GetPrivateProfileInt("TTSSH", "ProtocolVersion", 1, fileName);
+	// default is SSH2 (2004.11.30 yutaka)
+	settings->ssh_protocol_version = GetPrivateProfileInt("TTSSH", "ProtocolVersion", 2, fileName);
 
 	clear_local_settings(pvar);
 }
@@ -854,10 +855,10 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 		SendDlgItemMessage(dlg, IDC_SSH_VERSION, EM_LIMITTEXT,
 						   NUM_ELEM(ssh_version) - 1, 0);
 
-		if (pvar->settings.ssh_protocol_version == 2) {
-			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 1, 0); // SSH2
-		} else {
+		if (pvar->settings.ssh_protocol_version == 1) {
 			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 0, 0); // SSH1
+		} else {
+			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 1, 0); // SSH2
 		}
 
 		if (IsDlgButtonChecked(dlg, IDC_HOSTSSH)) {
@@ -902,12 +903,18 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 		// Host dialogにフォーカスをあてる (2004.10.2 yutaka)
 		{
 		HWND hwnd = GetDlgItem(dlg, IDC_HOSTNAME);
-		SetFocus(dlg);
+
 		SetFocus(hwnd);
-		//SendMessage(dlg, WM_COMMAND, IDC_HOSTTCPIP, 0);
+		//SendMessage(hwnd, BM_SETCHECK, BST_CHECKED, 0);
+		//style = GetClassLongPtr(hwnd, GCL_STYLE);
+		//SetClassLongPtr(hwnd, GCL_STYLE, style | WS_TABSTOP);
 		}
 
-		return TRUE;
+		// SetFocus()でフォーカスをあわせた場合、FALSEを返す必要がある。
+		// TRUEを返すと、TABSTOP対象の一番はじめのコントロールが選ばれる。
+		// (2004.11.23 yutaka)
+		return FALSE;
+		//return TRUE;
 
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
@@ -985,17 +992,11 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 #endif							/* INET6 */
 			enable_dlg_items(dlg, IDC_HOSTCOMLABEL, IDC_HOSTCOM, FALSE);
 
+			enable_dlg_items(dlg, IDC_SSH_VERSION_LABEL, IDC_SSH_VERSION_LABEL, TRUE); // disabled (2004.11.23 yutaka)
 			if (IsDlgButtonChecked(dlg, IDC_HOSTSSH)) {
 				enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, TRUE);
 			} else {
 				enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, FALSE); // disabled
-			}
-
-			// Host dialogにフォーカスをあてる (2004.10.2 yutaka)
-			{
-			HWND hwnd = GetDlgItem(dlg, IDC_HOSTNAME);
-			SetFocus(dlg);
-			SetFocus(hwnd);
 			}
 
 			return TRUE;
@@ -1009,6 +1010,7 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 							 IDC_HOSTTCPPROTOCOL, FALSE);
 #endif							/* INET6 */
 			enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, FALSE); // disabled
+			enable_dlg_items(dlg, IDC_SSH_VERSION_LABEL, IDC_SSH_VERSION_LABEL, FALSE); // disabled (2004.11.23 yutaka)
 
 			return TRUE;
 
@@ -1114,6 +1116,7 @@ static int parse_option(PTInstVar pvar, char FAR * option)
 			} else if (stricmp(option + 4, "-autologin") == 0
 					   || stricmp(option + 4, "-autologon") == 0) {
 				pvar->settings.TryDefaultAuth = TRUE;
+
 			} else if (MATCH_STR(option + 4, "-consume=") == 0) {
 				read_ssh_options_from_user_file(pvar, option + 13);
 				DeleteFile(option + 13);
@@ -1152,6 +1155,29 @@ static int parse_option(PTInstVar pvar, char FAR * option)
 			// TERATERM.INI でSSHが有効になっている場合、うまくCygtermが起動しないことが
 			// あることへの対処。(2004.10.11 yutaka)
 			pvar->settings.Enabled = 0;
+
+		} else if (MATCH_STR(option + 1, "auth") == 0) {
+			// SSH2自動ログインオプションの追加 (2004.11.30 yutaka)
+			//
+			// SYNOPSIS: /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+			// EXAMPLE: /ssh /auth=password /user=nike "/passwd=a b c"
+			// NOTICE: パスワードに空白が含まれる場合は、オプション全体を引用符で囲むこと。
+			//
+			pvar->ssh2_autologin = 1; // for SSH2 (2004.11.30 yutaka)
+
+			if (MATCH_STR(option + 5, "=password") == 0) { // パスワード認証
+				pvar->auth_state.cur_cred.method = SSH_AUTH_PASSWORD;
+
+			} else {
+				// TODO:
+
+			}
+
+		} else if (MATCH_STR(option + 1, "user=") == 0) {
+			_snprintf(pvar->ssh2_username, sizeof(pvar->ssh2_username), "%s", option + 6);
+
+		} else if (MATCH_STR(option + 1, "passwd=") == 0) {
+			_snprintf(pvar->ssh2_password, sizeof(pvar->ssh2_password), "%s", option + 8);
 
 		}
 
@@ -1971,3 +1997,15 @@ int CALLBACK LibMain(HANDLE hInstance, WORD wDataSegment,
 	return (1);
 }
 #endif
+
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.3  2004/11/29 15:52:37  yutakakn
+ * SSHのdefault protocolをSSH2にした。
+ *
+ * Revision 1.2  2004/11/23 14:32:26  yutakakn
+ * 接続ダイアログの起動時に、TCP/IPの「ホスト名」にフォーカスが当たるようにした。
+ *
+ *
+ */

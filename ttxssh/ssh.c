@@ -1735,9 +1735,10 @@ void SSH_init(PTInstVar pvar)
 	memset(pvar->ssh2_keys, 0, sizeof(pvar->ssh2_keys));
 	pvar->userauth_success = 0;
 	pvar->session_nego_status = 0;
-//	pvar->settings.ssh_protocol_version = 0;
+	pvar->settings.ssh_protocol_version = 2;  // SSH2(default)
 	pvar->rekeying = 0;
 	pvar->key_done = 0;
+	pvar->ssh2_autologin = 0;  // autologin disabled(default)
 
 }
 
@@ -2264,7 +2265,9 @@ static char *myproposal[PROPOSAL_MAX] = {
 	"3des-cbc,aes128-cbc",
 	"3des-cbc,aes128-cbc",
 	"hmac-sha1",
+//	"hmac-sha1,hmac-md5",
 	"hmac-sha1",
+//	"hmac-sha1,hmac-md5",
 	"none",
 	"none",
 	"",
@@ -4010,20 +4013,24 @@ static BOOL handle_SSH2_authrequest(PTInstVar pvar)
 
 	// ペイロードの構築
 	// TODO:
-	s = pvar->auth_state.user;  // ユーザ名
-#ifdef SSH2_DEBUG
-	s = "nike";
-#endif
+	if (pvar->ssh2_autologin == 1) { // SSH2自動ログイン
+		s = pvar->ssh2_username;
+	} else {
+		s = pvar->auth_state.user;  // ユーザ名
+	}
+
 	buffer_put_string(msg, s, strlen(s));
 	s = "ssh-connection";
 	buffer_put_string(msg, s, strlen(s));
 	s = "password";
 	buffer_put_string(msg, s, strlen(s));
 	buffer_put_char(msg, 0); // 0
-	s = pvar->auth_state.cur_cred.password;  // パスワード
-#ifdef SSH2_DEBUG
-	s = "kukuri";
-#endif
+
+	if (pvar->ssh2_autologin == 1) { // SSH2自動ログイン
+		s = pvar->ssh2_password;
+	} else {
+		s = pvar->auth_state.cur_cred.password;  // パスワード
+	}
 	buffer_put_string(msg, s, strlen(s));
 
 	// パケット送信
@@ -4090,6 +4097,13 @@ static BOOL handle_SSH2_userauth_failure(PTInstVar pvar)
 {
 	// TCP connection closed
 	//notify_closed_connection(pvar);
+
+	if (pvar->ssh2_autologin == 1) {
+		// SSH2自動ログインが有効の場合は、リトライは行わない。(2004.12.4 yutaka)
+		notify_fatal_error(pvar,
+			"SSH2 autologin error: user authentication was failure");
+		return TRUE;
+	}
 
 	// ユーザ認証に失敗したときは、ユーザ名は固定して、パスワードの再入力を
 	// させる。ここの処理は SSH1 と同じ。(2004.10.3 yutaka)
@@ -4398,3 +4412,15 @@ static BOOL handle_SSH2_window_adjust(PTInstVar pvar)
 	return TRUE;
 }
 
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.3  2004/12/01 15:37:49  yutakakn
+ * SSH2自動ログイン機能を追加。
+ * 現状、パスワード認証のみに対応。
+ * ・コマンドライン
+ *   /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+ *
+ * Revision 1.2  2004/11/29 15:52:37  yutakakn
+ * SSHのdefault protocolをSSH2にした。
+ * 
+ */
