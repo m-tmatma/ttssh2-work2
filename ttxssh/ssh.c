@@ -33,10 +33,13 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <openssl/evp.h>
 #include <openssl/dh.h>
 #include <openssl/engine.h>
+#include <openssl/rsa.h>
+#include <openssl/dsa.h>
 #include <limits.h>
 #include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
+#include <process.h>
 #include "buffer.h"
 #include "ssh.h"
 #include "crypt.h"
@@ -44,6 +47,9 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef _DEBUG
 #define SSH2_DEBUG
 #endif
+
+#define INTBLOB_LEN 20
+#define SIGBLOB_LEN (2*INTBLOB_LEN)
 
 static char ssh_ttymodes[] = "\x01\x03\x02\x1c\x03\x08\x04\x15\x05\x04";
 
@@ -76,6 +82,33 @@ int SSH2_dispatch_enabled_check(unsigned char message);
 void SSH2_dispatch_add_message(unsigned char message);
 void SSH2_dispatch_add_range_message(unsigned char begin, unsigned char end);
 int dh_pub_is_valid(DH *dh, BIGNUM *dh_pub);
+static void start_ssh_heartbeat_thread(PTInstVar pvar);
+
+
+//
+// SSH heartbeat mutex
+//
+static CRITICAL_SECTION g_ssh_heartbeat_lock;   /* ロック用変数 */
+
+void ssh_heartbeat_lock_initialize(void)
+{
+	InitializeCriticalSection(&g_ssh_heartbeat_lock);
+}
+
+void ssh_heartbeat_lock_finalize(void)
+{
+	DeleteCriticalSection(&g_ssh_heartbeat_lock);
+}
+
+void ssh_heartbeat_lock(void)
+{
+	EnterCriticalSection(&g_ssh_heartbeat_lock);
+}
+
+void ssh_heartbeat_unlock(void)
+{
+	LeaveCriticalSection(&g_ssh_heartbeat_lock);
+}
 
 
 static int get_predecryption_amount(PTInstVar pvar)
@@ -426,6 +459,9 @@ static void finish_send_packet_special(PTInstVar pvar, int skip_compress)
 	send_packet_blocking(pvar, data, data_length);
 
 	pvar->ssh_state.sender_sequence_number++;
+
+	// 送信時刻を記録 
+	pvar->ssh_heartbeat_tick = time(NULL);
 }
 
 static void destroy_packet_buf(PTInstVar pvar)
@@ -755,6 +791,10 @@ static BOOL handle_auth_success(PTInstVar pvar)
 	notify_verbose_message(pvar, "Authentication accepted",
 						   LOG_LEVEL_VERBOSE);
 	prep_compression(pvar);
+
+	// ハートビート・スレッドの開始 (2004.12.11 yutaka)
+	start_ssh_heartbeat_thread(pvar);
+
 	return FALSE;
 }
 
@@ -859,11 +899,6 @@ static BOOL parse_protocol_ID(PTInstVar pvar, char FAR * ID)
 			pvar->protocol_major = 2;
 			pvar->protocol_minor = 0;
 		}
-
-#ifdef SSH2_DEBUG
-		pvar->protocol_major = 2;
-		pvar->protocol_minor = 0;
-#endif
 
 	}
 
@@ -1735,9 +1770,10 @@ void SSH_init(PTInstVar pvar)
 	memset(pvar->ssh2_keys, 0, sizeof(pvar->ssh2_keys));
 	pvar->userauth_success = 0;
 	pvar->session_nego_status = 0;
-//	pvar->settings.ssh_protocol_version = 0;
+	pvar->settings.ssh_protocol_version = 2;  // SSH2(default)
 	pvar->rekeying = 0;
 	pvar->key_done = 0;
+	pvar->ssh2_autologin = 0;  // autologin disabled(default)
 
 }
 
@@ -2063,6 +2099,44 @@ void SSH_end(PTInstVar pvar)
 		inflateEnd(&pvar->ssh_state.decompress_stream);
 		pvar->ssh_state.decompressing = FALSE;
 	}
+
+#if 1
+	// SSH2のデータを解放する (2004.12.27 yutaka)
+	if (SSHv2(pvar)) {
+		if (pvar->kexdh) {
+			DH_free(pvar->kexdh);
+			pvar->kexdh = NULL;
+		}
+		memset(pvar->server_version_string, 0, sizeof(pvar->server_version_string));
+		memset(pvar->client_version_string, 0, sizeof(pvar->client_version_string));
+
+		if (pvar->my_kex != NULL) {
+			buffer_free(pvar->my_kex);
+			pvar->my_kex = NULL;
+		}
+		if (pvar->peer_kex != NULL) {
+			buffer_free(pvar->peer_kex);
+			pvar->peer_kex = NULL;
+		}
+
+		pvar->we_need = 0;
+		pvar->key_done = 0;
+		pvar->rekeying = 0;
+
+		if (pvar->session_id != NULL) {
+			free(pvar->session_id);
+			pvar->session_id = NULL;
+		}
+		pvar->session_id_len = 0;
+
+		pvar->userauth_success = 0;
+		pvar->remote_id = 0;
+		pvar->session_nego_status = 0;
+
+		pvar->ssh_heartbeat_tick = 0;
+	}
+#endif
+
 }
 
 /* support for port forwarding */
@@ -2257,14 +2331,18 @@ void debug_print(int no, char *msg, int len)
 // クライアントからサーバへの提案事項
 #ifdef SSH2_DEBUG
 static char *myproposal[PROPOSAL_MAX] = {
-//	"diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
-	"diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,diffie-hellman-group-exchange-sha1",
+	"diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
+//	"diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,diffie-hellman-group-exchange-sha1",
 //	"ssh-rsa,ssh-dss",
 	"ssh-dss,ssh-rsa",
 	"3des-cbc,aes128-cbc",
 	"3des-cbc,aes128-cbc",
-	"hmac-sha1",
-	"hmac-sha1",
+	"hmac-md5,hmac-sha1",
+	"hmac-md5,hmac-sha1",
+//	"hmac-sha1,hmac-md5",
+//	"hmac-sha1,hmac-md5",
+//	"hmac-sha1",
+//	"hmac-sha1",
 	"none",
 	"none",
 	"",
@@ -2272,12 +2350,12 @@ static char *myproposal[PROPOSAL_MAX] = {
 };
 #else
 static char *myproposal[PROPOSAL_MAX] = {
-	"diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,diffie-hellman-group-exchange-sha1",
+	"diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
 	"ssh-rsa,ssh-dss",
 	"3des-cbc,aes128-cbc",
 	"3des-cbc,aes128-cbc",
-	"hmac-sha1",
-	"hmac-sha1",
+	"hmac-sha1,hmac-md5",
+	"hmac-sha1,hmac-md5",
 	"none",
 	"none",
 	"",
@@ -2350,6 +2428,7 @@ static int get_cipher_key_len(SSHCipher cipher)
 }
 
 
+#if 0
 static int get_mac_index(char *name) 
 {
 	ssh2_mac_t *ptr = ssh2_macs;
@@ -2364,6 +2443,7 @@ static int get_mac_index(char *name)
 	}
 	return (val);
 }
+#endif
 
 
 static void do_write_buffer_file(void *buf, int len, char *file, int lineno)
@@ -2490,11 +2570,34 @@ static SSHCipher choose_SSH2_cipher_algorithm(char *server_proposal, char *my_pr
 }
 
 
+static enum hmac_type choose_SSH2_hmac_algorithm(char *server_proposal, char *my_proposal)
+{
+	char tmp[1024], *ptr;
+	enum hmac_type type = HMAC_UNKNOWN;
+
+	_snprintf(tmp, sizeof(tmp), my_proposal);
+	ptr = strtok(tmp, ","); // not thread-safe
+	while (ptr != NULL) {
+		// server_proposalにはサーバのproposalがカンマ文字列で格納されている
+		if (strstr(server_proposal, ptr)) { // match
+			break;
+		}
+		ptr = strtok(NULL, ",");
+	}
+	if (strstr(ptr, "hmac-sha1")) {
+		type = HMAC_SHA1;
+	} else if (strstr(ptr, "hmac-md5")) {
+		type = HMAC_MD5;
+	}
+
+	return (type);
+}
+
+
 // 暗号アルゴリズムのキーサイズ、ブロックサイズ、MACサイズのうち最大値(we_need)を決定する。
 static void choose_SSH2_key_maxlength(PTInstVar pvar)
 {
 	int mode, need, val, ctos;
-	char *macname;
 	const EVP_MD *md;
 
 	for (mode = 0; mode < MODE_MAX; mode++) {
@@ -2502,10 +2605,11 @@ static void choose_SSH2_key_maxlength(PTInstVar pvar)
 			ctos = 1;
 		else
 			ctos = 0;
-		macname = myproposal[PROPOSAL_MAC_ALGS_CTOS + ctos];
-		val = get_mac_index(macname);
-		if (val == -1) {
-			goto error;
+
+		if (ctos == 1) {
+			val = pvar->ctos_hmac;
+		} else {
+			val = pvar->stoc_hmac;
 		}
 
 		// current_keys[]に設定しておいて、あとで pvar->ssh2_keys[] へコピーする。
@@ -2550,7 +2654,6 @@ static void choose_SSH2_key_maxlength(PTInstVar pvar)
 	}
 	pvar->we_need = need;
 
-error:;
 }
 
 
@@ -2727,6 +2830,39 @@ static BOOL handle_SSH2_kexinit(PTInstVar pvar)
 		msg = tmp;
 		goto error;
 	}
+
+
+	// HMAC(Hash Message Authentication Code)アルゴリズムの決定 (2004.12.17 yutaka)
+	size = get_payload_uint32(pvar, offset);
+	offset += 4;
+	for (i = 0; i < size; i++) {
+		buf[i] = data[offset + i];
+	}
+	buf[i] = 0;
+	offset += size;
+	pvar->ctos_hmac = choose_SSH2_hmac_algorithm(buf, myproposal[PROPOSAL_MAC_ALGS_CTOS]);
+	if (pvar->ctos_hmac == HMAC_UNKNOWN) { // not match
+		strcpy(tmp, "unknown HMAC algorithm: ");
+		strcat(tmp, buf);
+		msg = tmp;
+		goto error;
+	}
+
+	size = get_payload_uint32(pvar, offset);
+	offset += 4;
+	for (i = 0; i < size; i++) {
+		buf[i] = data[offset + i];
+	}
+	buf[i] = 0;
+	offset += size;
+	pvar->stoc_hmac = choose_SSH2_hmac_algorithm(buf, myproposal[PROPOSAL_MAC_ALGS_STOC]);
+	if (pvar->ctos_hmac == HMAC_UNKNOWN) { // not match
+		strcpy(tmp, "unknown HMAC algorithm: ");
+		strcat(tmp, buf);
+		msg = tmp;
+		goto error;
+	}
+
 
 	// we_needの決定 (2004.11.6 yutaka)
 	// キー再作成の場合はスキップする。
@@ -3182,6 +3318,14 @@ void kex_derive_keys(PTInstVar pvar, int need, u_char *hash, BIGNUM *shared_secr
 		else
 			ctos = 0;
 
+		// free already allocated buffer (2004.12.27 yutaka)
+		if (current_keys[mode].enc.iv != NULL)
+			free(current_keys[mode].enc.iv);
+		if (current_keys[mode].enc.key != NULL)
+			free(current_keys[mode].enc.key);
+		if (current_keys[mode].mac.key != NULL)
+			free(current_keys[mode].mac.key);
+
 		// setting
 		current_keys[mode].enc.iv  = keys[ctos ? 0 : 1];
 		current_keys[mode].enc.key = keys[ctos ? 2 : 3];
@@ -3194,40 +3338,114 @@ void kex_derive_keys(PTInstVar pvar, int need, u_char *hash, BIGNUM *shared_secr
 }
 
 
+//////////////////////////////////////////////////////////////////////////////
+//
+// Key verify function
+// 
+//////////////////////////////////////////////////////////////////////////////
+
+//
+// DSS
+// 
+
+static int ssh_dss_verify(
+			DSA *key, u_char *signature, u_int signaturelen,
+			u_char *data, u_int datalen)
+{
+	DSA_SIG *sig;
+	const EVP_MD *evp_md = EVP_sha1();
+	EVP_MD_CTX md;
+	unsigned char digest[EVP_MAX_MD_SIZE], *sigblob;
+	unsigned int len, dlen;
+	int ret;
+	char *ptr;
+
+	OpenSSL_add_all_digests();
+
+	if (key == NULL) {
+		return -1;
+	}
+
+	ptr = signature;
+
+	// step1
+	len = get_uint32_MSBfirst(ptr);
+	ptr += 4;
+	if (strncmp("ssh-dss", ptr, len) != 0) {
+		return -1;
+	}
+	ptr += len;
+
+	// step2
+	len = get_uint32_MSBfirst(ptr);
+	ptr += 4;
+	sigblob = ptr;
+	ptr += len;
+
+	if (len != SIGBLOB_LEN) {
+		return -1;
+	}
+
+	/* parse signature */
+	if ((sig = DSA_SIG_new()) == NULL)
+		return -1;
+	if ((sig->r = BN_new()) == NULL)
+		return -1;
+	if ((sig->s = BN_new()) == NULL)
+		return -1;
+	BN_bin2bn(sigblob, INTBLOB_LEN, sig->r);
+	BN_bin2bn(sigblob+ INTBLOB_LEN, INTBLOB_LEN, sig->s);
+
+	/* sha1 the data */
+	EVP_DigestInit(&md, evp_md);
+	EVP_DigestUpdate(&md, data, datalen);
+	EVP_DigestFinal(&md, digest, &dlen);
+
+	ret = DSA_do_verify(digest, dlen, sig, key);
+	memset(digest, 'd', sizeof(digest));
+
+	DSA_SIG_free(sig);
+
+	return ret;
+}
+
+
+//
+// RSA
+// 
 
 /*
- * See:
- * http://www.rsasecurity.com/rsalabs/pkcs/pkcs-1/
- * ftp://ftp.rsasecurity.com/pub/pkcs/pkcs-1/pkcs-1v2-1.asn
- */
+* See:
+* http://www.rsasecurity.com/rsalabs/pkcs/pkcs-1/
+* ftp://ftp.rsasecurity.com/pub/pkcs/pkcs-1/pkcs-1v2-1.asn
+*/
 /*
- * id-sha1 OBJECT IDENTIFIER ::= { iso(1) identified-organization(3)
- *	oiw(14) secsig(3) algorithms(2) 26 }
- */
+* id-sha1 OBJECT IDENTIFIER ::= { iso(1) identified-organization(3)
+*	oiw(14) secsig(3) algorithms(2) 26 }
+*/
 static const u_char id_sha1[] = {
 	0x30, 0x21, /* type Sequence, length 0x21 (33) */
-	0x30, 0x09, /* type Sequence, length 0x09 */
-	0x06, 0x05, /* type OID, length 0x05 */
-	0x2b, 0x0e, 0x03, 0x02, 0x1a, /* id-sha1 OID */
-	0x05, 0x00, /* NULL */
-	0x04, 0x14  /* Octet string, length 0x14 (20), followed by sha1 hash */
+		0x30, 0x09, /* type Sequence, length 0x09 */
+		0x06, 0x05, /* type OID, length 0x05 */
+		0x2b, 0x0e, 0x03, 0x02, 0x1a, /* id-sha1 OID */
+		0x05, 0x00, /* NULL */
+		0x04, 0x14  /* Octet string, length 0x14 (20), followed by sha1 hash */
 };
 /*
- * id-md5 OBJECT IDENTIFIER ::= { iso(1) member-body(2) us(840)
- *	rsadsi(113549) digestAlgorithm(2) 5 }
- */
+* id-md5 OBJECT IDENTIFIER ::= { iso(1) member-body(2) us(840)
+*	rsadsi(113549) digestAlgorithm(2) 5 }
+*/
 static const u_char id_md5[] = {
 	0x30, 0x20, /* type Sequence, length 0x20 (32) */
-	0x30, 0x0c, /* type Sequence, length 0x09 */
-	0x06, 0x08, /* type OID, length 0x05 */
-	0x2a, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x02, 0x05, /* id-md5 */
-	0x05, 0x00, /* NULL */
-	0x04, 0x10  /* Octet string, length 0x10 (16), followed by md5 hash */
+		0x30, 0x0c, /* type Sequence, length 0x09 */
+		0x06, 0x08, /* type OID, length 0x05 */
+		0x2a, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x02, 0x05, /* id-md5 */
+		0x05, 0x00, /* NULL */
+		0x04, 0x10  /* Octet string, length 0x10 (16), followed by md5 hash */
 };
 
-static int
-openssh_RSA_verify(int type, u_char *hash, u_int hashlen,
-    u_char *sigbuf, u_int siglen, RSA *rsa)
+static int openssh_RSA_verify(int type, u_char *hash, u_int hashlen,
+				   u_char *sigbuf, u_int siglen, RSA *rsa)
 {
 	u_int ret, rsasize, oidlen = 0, hlen = 0;
 	int len;
@@ -3264,39 +3482,40 @@ openssh_RSA_verify(int type, u_char *hash, u_int hashlen,
 		return 1; // error
 
 	if ((len = RSA_public_decrypt(siglen, sigbuf, decrypted, rsa,
-	    RSA_PKCS1_PADDING)) < 0) {
-		//error("RSA_public_decrypt failed: %s",
-		//    ERR_error_string(ERR_get_error(), NULL));
-		goto done;
-	}
-	if (len != hlen + oidlen) {
-		//error("bad decrypted len: %d != %d + %d", len, hlen, oidlen);
-		goto done;
-	}
-	if (memcmp(decrypted, oid, oidlen) != 0) {
-		//error("oid mismatch");
-		goto done;
-	}
-	if (memcmp(decrypted + oidlen, hash, hlen) != 0) {
-		//error("hash mismatch");
-		goto done;
-	}
-	ret = 1;
+		RSA_PKCS1_PADDING)) < 0) {
+			//error("RSA_public_decrypt failed: %s",
+			//    ERR_error_string(ERR_get_error(), NULL));
+			goto done;
+		}
+		if (len != hlen + oidlen) {
+			//error("bad decrypted len: %d != %d + %d", len, hlen, oidlen);
+			goto done;
+		}
+		if (memcmp(decrypted, oid, oidlen) != 0) {
+			//error("oid mismatch");
+			goto done;
+		}
+		if (memcmp(decrypted + oidlen, hash, hlen) != 0) {
+			//error("hash mismatch");
+			goto done;
+		}
+		ret = 1;
 done:
-	if (decrypted)
-		free(decrypted);
-	return ret;
+		if (decrypted)
+			free(decrypted);
+		return ret;
 }
 
-int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
-    u_char *data, u_int datalen)
+static int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
+				   u_char *data, u_int datalen)
 {
 	const EVP_MD *evp_md;
 	EVP_MD_CTX md;
-//	char *ktype;
+	//	char *ktype;
 	u_char digest[EVP_MAX_MD_SIZE], *sigblob;
 	u_int len, dlen, modlen;
-	int rlen, ret, nid;
+//	int rlen, ret, nid;
+	int ret, nid;
 	char *ptr;
 
 	OpenSSL_add_all_digests();
@@ -3309,7 +3528,7 @@ int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
 	}
 	//debug_print(41, signature, signaturelen);
 	ptr = signature;
-	
+
 	// step1
 	len = get_uint32_MSBfirst(ptr);
 	ptr += 4;
@@ -3323,10 +3542,12 @@ int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
 	ptr += 4;
 	sigblob = ptr;
 	ptr += len;
+#if 0
 	rlen = get_uint32_MSBfirst(ptr);
 	if (rlen != 0) {
 		return -1;
 	}
+#endif
 
 	/* RSA_verify expects a signature of RSA_size */
 	modlen = RSA_size(key);
@@ -3340,7 +3561,7 @@ int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
 		memset(sigblob, 0, diff);
 		len = modlen;
 	}
-//	nid = (datafellows & SSH_BUG_RSASIGMD5) ? NID_md5 : NID_sha1;
+	//	nid = (datafellows & SSH_BUG_RSASIGMD5) ? NID_md5 : NID_sha1;
 	nid = NID_sha1;
 	if ((evp_md = EVP_get_digestbynid(nid)) == NULL) {
 		//error("ssh_rsa_verify: EVP_get_digestbynid %d failed", nid);
@@ -3360,11 +3581,11 @@ int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
 	return ret;
 }
 
-int key_verify(
-	RSA *rsa_key, 
-	DSA *dsa_key,
-	unsigned char *signature, unsigned int signaturelen,
-	unsigned char *data, unsigned int datalen)
+static int key_verify(
+			   RSA *rsa_key, 
+			   DSA *dsa_key,
+			   unsigned char *signature, unsigned int signaturelen,
+			   unsigned char *data, unsigned int datalen)
 {
 	int ret = 0;
 
@@ -3372,8 +3593,7 @@ int key_verify(
 		ret = ssh_rsa_verify(rsa_key, signature, signaturelen, data, datalen);
 
 	} else if (dsa_key != NULL) {
-		// TODO:
-
+		ret = ssh_dss_verify(dsa_key, signature, signaturelen, data, datalen);
 
 	} else {
 		return -1;
@@ -3542,7 +3762,7 @@ static BOOL handle_SSH2_dh_kex_reply(PTInstVar pvar)
 		}
 	}
 
-#if 0
+#if 1
 	if (key_verify(rsa, dsa, signature, siglen, hash, 20) != 1) {
 		emsg = "key verify error @ handle_SSH2_dh_kex_reply()";
 		goto error;
@@ -3833,7 +4053,7 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 		}
 	}
 
-#if 0
+#if 1
 	if (key_verify(rsa, dsa, signature, siglen, hash, 20) != 1) {
 		emsg = "key verify error @ handle_SSH2_dh_kex_reply()";
 		goto error;
@@ -3960,17 +4180,11 @@ BOOL do_SSH2_userauth(PTInstVar pvar)
 	char *s;
 	unsigned char *outmsg;
 	int len;
-
-#if 1
-	// TODO: MACの決定
-	{
 	int mode;
 
 	for (mode = 0 ; mode < MODE_MAX ; mode++) {
 		pvar->ssh2_keys[mode].mac.enabled = 1;
 	}
-	}
-#endif
 
 	// start user authentication
 	msg = buffer_init();
@@ -3993,12 +4207,193 @@ BOOL do_SSH2_userauth(PTInstVar pvar)
 	return TRUE;
 }
 
+
+static char *get_SSH2_keyname(CRYPTKeyPair *keypair)
+{
+	char *s;
+
+	if (keypair->RSA_key != NULL) {
+		s = "ssh-rsa";
+	} else {
+		s = "ssh-dss";
+	}
+
+	return (s);
+}
+
+
+static BOOL generate_SSH2_keysign(CRYPTKeyPair *keypair, char **sigptr, int *siglen, char *data, int datalen)
+{
+	buffer_t *msg = NULL;
+	char *s;
+
+	msg = buffer_init();
+	if (msg == NULL) {
+		// TODO: error check
+		return FALSE;
+	}
+
+	if (keypair->RSA_key != NULL) { // RSA
+		const EVP_MD *evp_md;
+		EVP_MD_CTX md;
+		u_char digest[EVP_MAX_MD_SIZE], *sig;
+		u_int slen, dlen, len;
+		int ok, nid;
+
+		nid = NID_sha1;
+		if ((evp_md = EVP_get_digestbynid(nid)) == NULL) {
+			goto error;
+		}
+
+		// ダイジェスト値の計算
+		EVP_DigestInit(&md, evp_md);
+		EVP_DigestUpdate(&md, data, datalen);
+		EVP_DigestFinal(&md, digest, &dlen);
+
+		slen = RSA_size(keypair->RSA_key);
+		sig = malloc(slen);
+		if (sig == NULL)
+			goto error;
+
+		// 電子署名を計算
+		ok = RSA_sign(nid, digest, dlen, sig, &len, keypair->RSA_key);
+		memset(digest, 'd', sizeof(digest));
+		if (ok != 1) { // error
+			free(sig);
+			goto error;
+		}
+		// 署名のサイズがバッファより小さい場合、後ろへずらす。先頭はゼロで埋める。
+		if (len < slen) {
+			u_int diff = slen - len;
+			memmove(sig + diff, sig, len);
+			memset(sig, 0, diff);
+
+		} else if (len > slen) {
+			free(sig);
+			goto error;
+
+		} else {
+			// do nothing
+
+		}
+
+		s = get_SSH2_keyname(keypair);
+		buffer_put_string(msg, s, strlen(s));
+		buffer_append_length(msg, sig, slen);
+		len = buffer_len(msg);
+
+		// setting
+		*siglen = len;
+		*sigptr = malloc(len);
+		if (*sigptr == NULL) {
+			free(sig);
+			goto error;
+		}
+		memcpy(*sigptr, buffer_ptr(msg), len);
+		free(sig);
+
+	} else { // DSA
+		DSA_SIG *sig;
+		const EVP_MD *evp_md = EVP_sha1();
+		EVP_MD_CTX md;
+		u_char digest[EVP_MAX_MD_SIZE], sigblob[SIGBLOB_LEN];
+		u_int rlen, slen, len, dlen;
+
+		// ダイジェストの計算
+		EVP_DigestInit(&md, evp_md);
+		EVP_DigestUpdate(&md, data, datalen);
+		EVP_DigestFinal(&md, digest, &dlen);
+
+		// DSA電子署名を計算
+		sig = DSA_do_sign(digest, dlen, keypair->DSA_key);
+		memset(digest, 'd', sizeof(digest));
+		if (sig == NULL) {
+			goto error;
+		}
+
+		// BIGNUMからバイナリ値への変換
+		rlen = BN_num_bytes(sig->r);
+		slen = BN_num_bytes(sig->s);
+		if (rlen > INTBLOB_LEN || slen > INTBLOB_LEN) {
+			DSA_SIG_free(sig);
+			goto error;
+		}
+		memset(sigblob, 0, SIGBLOB_LEN);
+		BN_bn2bin(sig->r, sigblob+ SIGBLOB_LEN - INTBLOB_LEN - rlen);
+		BN_bn2bin(sig->s, sigblob+ SIGBLOB_LEN - slen);
+		DSA_SIG_free(sig);
+
+		// setting
+		s = get_SSH2_keyname(keypair);
+		buffer_put_string(msg, s, strlen(s));
+		buffer_append_length(msg, sigblob, sizeof(sigblob));
+		len = buffer_len(msg);
+
+		// setting
+		*siglen = len;
+		*sigptr = malloc(len);
+		if (*sigptr == NULL) {
+			goto error;
+		}
+		memcpy(*sigptr, buffer_ptr(msg), len);
+
+	}
+
+	buffer_free(msg);
+	return TRUE;
+
+error:
+	buffer_free(msg);
+
+	return FALSE;
+}
+
+
+static BOOL get_SSH2_publickey_blob(PTInstVar pvar, buffer_t **blobptr, int *bloblen)
+{
+	buffer_t *msg = NULL;
+	CRYPTKeyPair *keypair;
+	char *s;
+
+	msg = buffer_init();
+	if (msg == NULL) {
+		// TODO: error check
+		return FALSE;
+	}
+
+	keypair = pvar->auth_state.cur_cred.key_pair;
+
+	if (keypair->RSA_key != NULL) { // RSA
+		s = get_SSH2_keyname(keypair);
+		buffer_put_string(msg, s, strlen(s));
+		buffer_put_bignum2(msg, keypair->RSA_key->e); // 公開指数
+		buffer_put_bignum2(msg, keypair->RSA_key->n); // p×q
+
+	} else { // DSA
+		s = get_SSH2_keyname(keypair);
+		buffer_put_string(msg, s, strlen(s));
+		buffer_put_bignum2(msg, keypair->DSA_key->p); // 素数
+		buffer_put_bignum2(msg, keypair->DSA_key->q); // (p-1)の素因数
+		buffer_put_bignum2(msg, keypair->DSA_key->g); // 整数
+		buffer_put_bignum2(msg, keypair->DSA_key->pub_key); // 公開鍵
+
+	}
+
+	*blobptr = msg;
+	*bloblen = buffer_len(msg);
+
+	return TRUE;
+}
+
+
+// ユーザ認証パケットの構築
 static BOOL handle_SSH2_authrequest(PTInstVar pvar)
 {
-	buffer_t *msg;
+	buffer_t *msg = NULL;
 	char *s;
 	unsigned char *outmsg;
 	int len;
+	char *connect_id = "ssh-connection";
 
 	//		pvar->auth_state.cur_cred.password = password;
 	//		pvar->auth_state.user =
@@ -4009,22 +4404,90 @@ static BOOL handle_SSH2_authrequest(PTInstVar pvar)
 	}
 
 	// ペイロードの構築
-	// TODO:
-	s = pvar->auth_state.user;  // ユーザ名
-#ifdef SSH2_DEBUG
-	s = "nike";
-#endif
+	if (pvar->ssh2_autologin == 1) { // SSH2自動ログイン
+		s = pvar->ssh2_username;
+	} else {
+		s = pvar->auth_state.user;  // ユーザ名
+	}
 	buffer_put_string(msg, s, strlen(s));
-	s = "ssh-connection";
-	buffer_put_string(msg, s, strlen(s));
-	s = "password";
-	buffer_put_string(msg, s, strlen(s));
-	buffer_put_char(msg, 0); // 0
-	s = pvar->auth_state.cur_cred.password;  // パスワード
-#ifdef SSH2_DEBUG
-	s = "kukuri";
-#endif
-	buffer_put_string(msg, s, strlen(s));
+
+	if (pvar->auth_state.cur_cred.method == SSH_AUTH_PASSWORD) { // パスワード認証
+		s = connect_id;
+		buffer_put_string(msg, s, strlen(s));
+		s = "password";
+		buffer_put_string(msg, s, strlen(s));
+		buffer_put_char(msg, 0); // 0
+
+		if (pvar->ssh2_autologin == 1) { // SSH2自動ログイン
+			s = pvar->ssh2_password;
+		} else {
+			s = pvar->auth_state.cur_cred.password;  // パスワード
+		}
+		buffer_put_string(msg, s, strlen(s));
+
+
+	} else if (pvar->auth_state.cur_cred.method == SSH_AUTH_RSA) { // 公開鍵認証
+		buffer_t *signbuf = NULL;
+		buffer_t *blob = NULL;
+		int bloblen;
+		char *signature = NULL;
+		int siglen;
+		CRYPTKeyPair *keypair = pvar->auth_state.cur_cred.key_pair;
+
+		if (get_SSH2_publickey_blob(pvar, &blob, &bloblen) == FALSE) {
+			goto error;
+		}
+
+		// step1
+		signbuf = buffer_init();
+		if (signbuf == NULL) {
+			buffer_free(blob);
+			goto error;
+		}
+		// セッションID
+		buffer_append_length(signbuf, pvar->session_id, pvar->session_id_len);
+		buffer_put_char(signbuf, SSH2_MSG_USERAUTH_REQUEST); 
+		s = pvar->auth_state.user;  // ユーザ名
+		buffer_put_string(signbuf, s, strlen(s));
+		s = connect_id;
+		buffer_put_string(signbuf, s, strlen(s));
+		s = "publickey";
+		buffer_put_string(signbuf, s, strlen(s));
+		buffer_put_char(signbuf, 1); // true
+		s = get_SSH2_keyname(keypair); // key typeに応じた文字列を得る
+		buffer_put_string(signbuf, s, strlen(s));
+		s = buffer_ptr(blob);
+		buffer_append_length(signbuf, s, bloblen);
+
+		// 署名の作成
+		if ( generate_SSH2_keysign(keypair, &signature, &siglen, buffer_ptr(signbuf), buffer_len(signbuf)) == FALSE) {
+			buffer_free(blob);
+			buffer_free(signbuf);
+			goto error;
+		}
+
+		// step3
+		s = connect_id;
+		buffer_put_string(msg, s, strlen(s));
+		s = "publickey";
+		buffer_put_string(msg, s, strlen(s));
+		buffer_put_char(msg, 1); // true
+		s = get_SSH2_keyname(keypair); // key typeに応じた文字列を得る
+		buffer_put_string(msg, s, strlen(s));
+		s = buffer_ptr(blob);
+		buffer_append_length(msg, s, bloblen);
+		buffer_append_length(msg, signature, siglen);
+
+
+		buffer_free(blob);
+		buffer_free(signbuf);
+		free(signature);
+
+	} else {
+		goto error;
+
+	}
+
 
 	// パケット送信
 	len = buffer_len(msg);
@@ -4039,6 +4502,99 @@ static BOOL handle_SSH2_authrequest(PTInstVar pvar)
 	SSH2_dispatch_add_message(SSH2_MSG_USERAUTH_BANNER);
 
 	return TRUE;
+
+error:
+	buffer_free(msg);
+
+	return FALSE;
+}
+
+
+//
+// SSH2 heartbeat procedure
+// 
+// NAT環境において、SSHクライアントとサーバ間で通信が発生しなかった場合、
+// ルータが勝手にNATテーブルをクリアすることがあり、SSHコネクションが
+// 切れてしまうことがある。定期的に、クライアントからダミーパケットを
+// 送信することで対処する。(2004.12.10 yutaka)
+//
+static unsigned __stdcall ssh_heartbeat_thread(void FAR * p)
+{
+	static int instance = 0;
+	PTInstVar pvar = (PTInstVar)p;
+	time_t tick;
+
+	// すでに実行中なら何もせずに返る。
+	if (instance > 0)
+		return 0;
+	instance++;
+
+	for (;;) {
+		// ソケットがクローズされたらスレッドを終わる
+		if (pvar->socket == INVALID_SOCKET)
+			break;
+
+		// 一定時間無通信であれば、サーバへダミーパケットを送る
+		// 閾値が0であれば何もしない。
+		tick = time(NULL) - pvar->ssh_heartbeat_tick;
+		if (pvar->ts_SSH->ssh_heartbeat_overtime > 0 && 
+			tick > pvar->ts_SSH->ssh_heartbeat_overtime) { 
+			buffer_t *msg;
+			char *s;
+			unsigned char *outmsg;
+			int len;
+
+			// 別コンテキストで、SSHのシーケンスへ割り込まないようにロックを取る。
+			ssh_heartbeat_lock();
+
+			msg = buffer_init();
+			if (msg == NULL) {
+				// TODO: error check
+				continue;
+			}
+			s = "ssh-heartbeat";
+			buffer_put_string(msg, s, strlen(s));
+			len = buffer_len(msg);
+			if (SSHv1(pvar)) {
+				outmsg = begin_send_packet(pvar, SSH_MSG_IGNORE, len);
+			} else {
+				outmsg = begin_send_packet(pvar, SSH2_MSG_IGNORE, len);
+			}
+			memcpy(outmsg, buffer_ptr(msg), len);
+			finish_send_packet(pvar);
+			buffer_free(msg);
+
+			ssh_heartbeat_unlock();
+		}
+
+		Sleep(100); // yield
+	}
+
+	instance = 0;
+
+	return 0; 
+}
+
+static void start_ssh_heartbeat_thread(PTInstVar pvar)
+{
+	HANDLE thread;
+	unsigned tid;
+
+	thread = (HANDLE)_beginthreadex(NULL, 0, ssh_heartbeat_thread, pvar, 0, &tid);
+	if (thread == (HANDLE)-1) {
+		// TODO:
+	} 
+	pvar->ssh_heartbeat_thread = thread;
+}
+
+// スレッドの停止 (2004.12.27 yutaka)
+void halt_ssh_heartbeat_thread(PTInstVar pvar)
+{
+	if (pvar->ssh_heartbeat_thread != (HANDLE)-1L) {
+		WaitForSingleObject(pvar->ssh_heartbeat_thread, INFINITE);
+		CloseHandle(pvar->ssh_heartbeat_thread);
+		pvar->ssh_heartbeat_thread = (HANDLE)-1L;
+	}
 }
 
 
@@ -4082,6 +4638,9 @@ static BOOL handle_SSH2_userauth_success(PTInstVar pvar)
 	finish_send_packet(pvar);
 	buffer_free(msg);
 
+	// ハートビート・スレッドの開始 (2004.12.11 yutaka)
+	start_ssh_heartbeat_thread(pvar);
+
 	return TRUE;
 }
 
@@ -4090,6 +4649,13 @@ static BOOL handle_SSH2_userauth_failure(PTInstVar pvar)
 {
 	// TCP connection closed
 	//notify_closed_connection(pvar);
+
+	if (pvar->ssh2_autologin == 1) {
+		// SSH2自動ログインが有効の場合は、リトライは行わない。(2004.12.4 yutaka)
+		notify_fatal_error(pvar,
+			"SSH2 autologin error: user authentication was failure");
+		return TRUE;
+	}
 
 	// ユーザ認証に失敗したときは、ユーザ名は固定して、パスワードの再入力を
 	// させる。ここの処理は SSH1 と同じ。(2004.10.3 yutaka)
@@ -4398,3 +4964,42 @@ static BOOL handle_SSH2_window_adjust(PTInstVar pvar)
 	return TRUE;
 }
 
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.10  2004/12/27 14:05:08  yutakakn
+ * 'Auto window close'が有効の場合、切断後の接続ができない問題を修正した。
+ * 　・スレッドの終了待ち合わせ処理の追加
+ * 　・確保済みSSHリソースの解放
+ *
+ * Revision 1.9  2004/12/22 17:28:14  yutakakn
+ * SSH2公開鍵認証(RSA/DSA)をサポートした。
+ *
+ * Revision 1.8  2004/12/17 16:52:36  yutakakn
+ * KEXにおけるRSAおよびDSSのkey verify処理を追加。
+ *
+ * Revision 1.7  2004/12/17 14:28:36  yutakakn
+ * メッセージ認証アルゴリズムに HMAC-MD5 を追加。
+ * TTSSHバージョンダイアログにHMACアルゴリズム表示を追加。
+ *
+ * Revision 1.6  2004/12/17 14:05:55  yutakakn
+ * パケット受信時のHMACチェックを追加。
+ * KEXにおけるHMACアルゴリズムチェックを追加。
+ *
+ * Revision 1.5  2004/12/11 07:31:00  yutakakn
+ * SSH heartbeatスレッドの追加した。これにより、IPマスカレード環境において、ルータの
+ * NATテーブルクリアにより、SSHコネクションが切断される現象が回避される。
+ * それに合わせて、teraterm.iniのTTSSHセクションに、HeartBeat エントリを追加。
+ *
+ * Revision 1.4  2004/12/04 08:18:31  yutakakn
+ * SSH2自動ログインにおいて、ユーザ認証に失敗した場合、リトライを行わないようにした。
+ *
+ * Revision 1.3  2004/12/01 15:37:49  yutakakn
+ * SSH2自動ログイン機能を追加。
+ * 現状、パスワード認証のみに対応。
+ * ・コマンドライン
+ *   /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+ *
+ * Revision 1.2  2004/11/29 15:52:37  yutakakn
+ * SSHのdefault protocolをSSH2にした。
+ * 
+ */
