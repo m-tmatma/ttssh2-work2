@@ -28,6 +28,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "ttxssh.h"
 #include "util.h"
+#include "ssh.h"
 
 #include <io.h>
 #include <fcntl.h>
@@ -208,6 +209,51 @@ static void init_auth_dlg(PTInstVar pvar, HWND dlg)
 				   pvar->session_settings.DefaultRhostsLocalUserName);
 
 	update_server_supported_types(pvar, dlg);
+
+	// SSH2 autologin 
+	// ユーザ、パスワード、認証メソッドを自動設定して、一定時間後にOKボタンを押下する。
+	// 
+	// (2004.12.1 yutaka)
+	// (2005.1.26 yutaka) 公開鍵認証サポート
+	if (pvar->ssh2_autologin == 1) {
+		SetDlgItemText(dlg, IDC_SSHUSERNAME, pvar->ssh2_username);
+		EnableWindow(GetDlgItem(dlg, IDC_SSHUSERNAME), FALSE);
+		EnableWindow(GetDlgItem(dlg, IDC_SSHUSERNAMELABEL), FALSE);
+
+		SetDlgItemText(dlg, IDC_SSHPASSWORD, pvar->ssh2_password);
+		EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORD), FALSE);
+		EnableWindow(GetDlgItem(dlg, IDC_SSHPASSWORDCAPTION), FALSE);
+
+		if (pvar->ssh2_authmethod == SSH_AUTH_PASSWORD) {
+			CheckRadioButton(dlg, IDC_SSHUSEPASSWORD, MAX_AUTH_CONTROL, IDC_SSHUSEPASSWORD);
+
+		} else if (pvar->ssh2_authmethod == SSH_AUTH_RSA) {
+			CheckRadioButton(dlg, IDC_SSHUSEPASSWORD, MAX_AUTH_CONTROL, IDC_SSHUSERSA);
+
+			SetDlgItemText(dlg, IDC_RSAFILENAME, pvar->ssh2_keyfile);
+			EnableWindow(GetDlgItem(dlg, IDC_CHOOSERSAFILE), FALSE);
+			EnableWindow(GetDlgItem(dlg, IDC_RSAFILENAME), FALSE);
+
+		} else {
+			// TODO
+
+		}
+	}
+
+#if 1
+	// パスワード認証を試す前に、keyboard-interactiveメソッドを試す場合は、ラベル名を
+	// 変更する。(2005.3.12 yutaka)
+	if (pvar->settings.ssh2_keyboard_interactive == 1) {
+		SetDlgItemText(dlg, IDC_SSHUSEPASSWORD, "Use p&lain password to log in (with keyboard-interactive)");
+	}
+
+	if (pvar->settings.ssh_protocol_version == 1) {
+		SetDlgItemText(dlg, IDC_SSHUSETIS, "Use challenge/response to log in(&TIS)");
+	} else {
+		SetDlgItemText(dlg, IDC_SSHUSETIS, "Use challenge/response to log in(&keyboard-interactive)");
+	}
+#endif
+
 }
 
 static char FAR *alloc_control_text(HWND ctl)
@@ -229,9 +275,11 @@ static int get_key_file_name(HWND parent, char FAR * buf, int bufsize)
 	OPENFILENAME params;
 	char fullname_buf[2048] = "identity";
 
+	ZeroMemory(&params, sizeof(params));
 	params.lStructSize = sizeof(OPENFILENAME);
 	params.hwndOwner = parent;
-	params.lpstrFilter = NULL;
+	// フィルタの追加 (2004.12.19 yutaka)
+	params.lpstrFilter = "identity(RSA1)\0identity\0id_rsa(SSH2)\0id_rsa\0id_dsa(SSH2)\0id_dsa\0all(*.*)\0*.*\0\0";
 	params.lpstrCustomFilter = NULL;
 	params.nFilterIndex = 0;
 	buf[0] = 0;
@@ -301,11 +349,13 @@ static BOOL end_auth_dlg(PTInstVar pvar, HWND dlg)
 		GetDlgItemText(dlg, file_ctl_ID, buf, sizeof(buf));
 		if (buf[0] == 0) {
 			notify_nonfatal_error(pvar,
-								  "You must specify a file containing the RSA private key.");
+								  "You must specify a file containing the RSA/DSA private key.");
 			SetFocus(GetDlgItem(dlg, file_ctl_ID));
 			destroy_malloced_string(&password);
 			return FALSE;
-		} else {
+		} 
+		
+		if (SSHv1(pvar)) {
 			BOOL invalid_passphrase = FALSE;
 
 			key_pair = KEYFILES_read_private_key(pvar, buf, password,
@@ -324,7 +374,31 @@ static BOOL end_auth_dlg(PTInstVar pvar, HWND dlg)
 				destroy_malloced_string(&password);
 				return FALSE;
 			}
+
+		} else { // SSH2(yutaka)
+			BOOL invalid_passphrase = FALSE;
+			char errmsg[256];
+
+			memset(errmsg, 0, sizeof(errmsg));
+			//GetCurrentDirectory(sizeof(errmsg), errmsg);
+
+			key_pair = read_SSH2_private_key(pvar, buf, password,
+									&invalid_passphrase,
+									FALSE,
+									errmsg,
+									sizeof(errmsg)
+									);
+
+			if (key_pair == NULL) { // read error
+				char buf[1024];
+				_snprintf(buf, sizeof(buf), "read error SSH2 private key file\r\n%s", errmsg);
+				notify_nonfatal_error(pvar, buf);
+				destroy_malloced_string(&password);
+				return FALSE;
+			}
+
 		}
+
 	}
 
 	/* from here on, we cannot fail, so just munge cur_cred in place */
@@ -385,6 +459,8 @@ static BOOL end_auth_dlg(PTInstVar pvar, HWND dlg)
 static BOOL CALLBACK auth_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 								   LPARAM lParam)
 {
+	const int IDC_TIMER1 = 300;
+	const int autologin_timeout = 10; // ミリ秒
 	PTInstVar pvar;
 
 	switch (msg) {
@@ -394,13 +470,31 @@ static BOOL CALLBACK auth_dlg_proc(HWND dlg, UINT msg, WPARAM wParam,
 		SetWindowLong(dlg, DWL_USER, lParam);
 
 		init_auth_dlg(pvar, dlg);
+
+		// SSH2 autologinが有効の場合は、タイマを仕掛ける。 (2004.12.1 yutaka)
+		if (pvar->ssh2_autologin == 1) {
+			SetTimer(dlg, IDC_TIMER1, autologin_timeout, 0);
+		}
 		return FALSE;			/* because we set the focus */
+
+	case WM_TIMER:
+		pvar = (PTInstVar) GetWindowLong(dlg, DWL_USER);
+		// 認証準備ができてから、認証データを送信する。早すぎると、落ちる。(2004.12.16 yutaka)
+		if (!(pvar->ssh_state.status_flags & STATUS_DONT_SEND_USER_NAME)) {
+			KillTimer(dlg, IDC_TIMER1);
+			SendMessage(dlg, WM_COMMAND, IDOK, 0);
+		}
+		return TRUE;
 
 	case WM_COMMAND:
 		pvar = (PTInstVar) GetWindowLong(dlg, DWL_USER);
 
 		switch (LOWORD(wParam)) {
 		case IDOK:
+			// 認証準備ができてから、認証データを送信する。早すぎると、落ちる。(2001.1.25 yutaka)
+			if ((pvar->ssh_state.status_flags & STATUS_DONT_SEND_USER_NAME)) {
+				return FALSE;
+			}
 			return end_auth_dlg(pvar, dlg);
 
 		case IDCANCEL:			/* kill the connection */
@@ -454,9 +548,12 @@ int AUTH_set_supported_auth_types(PTInstVar pvar, int types)
 			| (1 << SSH_AUTH_TIS);
 	} else {
 		// for SSH2(yutaka)
-		types &= (1 << SSH_AUTH_PASSWORD);
-//		types &= (1 << SSH_AUTH_PASSWORD) | (1 << SSH_AUTH_RSA)
-//			| (1 << SSH_AUTH_DSA);
+//		types &= (1 << SSH_AUTH_PASSWORD);
+		// 公開鍵認証を有効にする (2004.12.18 yutaka)
+		// TISを追加。SSH2ではkeyboard-interactiveとして扱う。(2005.3.12 yutaka)
+		types &= (1 << SSH_AUTH_PASSWORD) | (1 << SSH_AUTH_RSA)
+			| (1 << SSH_AUTH_DSA)
+			| (1 << SSH_AUTH_TIS);
 	}
 	pvar->auth_state.supported_types = types;
 
@@ -477,6 +574,7 @@ int AUTH_set_supported_auth_types(PTInstVar pvar, int types)
 
 static void start_user_auth(PTInstVar pvar)
 {
+	// 認証ダイアログを表示させる (2004.12.1 yutaka)
 	PostMessage(pvar->NotificationWindow, WM_COMMAND, (WPARAM) ID_SSHAUTH,
 				(LPARAM) NULL);
 	pvar->auth_state.cur_cred.method = SSH_AUTH_NONE;
@@ -566,10 +664,14 @@ void AUTH_advance_to_next_cred(PTInstVar pvar)
 				pvar->auth_state.flags |=
 					AUTH_START_USER_AUTH_ON_ERROR_END;
 			} else {
+				// ここで認証ダイアログを出現させる (2004.12.1 yutaka)
+				// コマンドライン指定なしの場合
 				start_user_auth(pvar);
 			}
 		}
 	} else {
+		// ここで認証ダイアログを出現させる (2004.12.1 yutaka)
+		// コマンドライン指定あり(/auth=xxxx)の場合
 		start_user_auth(pvar);
 	}
 }
@@ -597,6 +699,12 @@ static BOOL end_TIS_dlg(PTInstVar pvar, HWND dlg)
 	pvar->auth_state.cur_cred.method = SSH_AUTH_TIS;
 	pvar->auth_state.cur_cred.password = password;
 	pvar->auth_state.auth_dialog = NULL;
+
+	// add
+	if (SSHv2(pvar)) {
+		pvar->keyboard_interactive_password_input = 1;
+		handle_SSH2_userauth_inforeq(pvar);
+	} 
 
 	SSH_notify_cred(pvar);
 
@@ -698,6 +806,12 @@ static void init_default_auth_dlg(PTInstVar pvar, HWND dlg)
 				   pvar->settings.DefaultRhostsHostPrivateKeyFile);
 	SetDlgItemText(dlg, IDC_LOCALUSERNAME,
 				   pvar->settings.DefaultRhostsLocalUserName);
+
+	// SSH2 keyboard-interactive method (2005.2.22 yutaka)
+	if (pvar->settings.ssh2_keyboard_interactive) {
+		SendMessage(GetDlgItem(dlg, IDC_KEYBOARD_INTERACTIVE_CHECK), BM_SETCHECK, BST_CHECKED, 0);
+	}
+
 }
 
 static BOOL end_default_auth_dlg(PTInstVar pvar, HWND dlg)
@@ -727,6 +841,17 @@ static BOOL end_default_auth_dlg(PTInstVar pvar, HWND dlg)
 	GetDlgItemText(dlg, IDC_LOCALUSERNAME,
 				   pvar->settings.DefaultRhostsLocalUserName,
 				   sizeof(pvar->settings.DefaultRhostsLocalUserName));
+
+	// SSH2 keyboard-interactive method (2005.2.22 yutaka)
+	{
+		LRESULT ret;
+		ret = SendMessage(GetDlgItem(dlg, IDC_KEYBOARD_INTERACTIVE_CHECK), BM_GETCHECK, 0, 0);
+		if (ret & BST_CHECKED) {
+			pvar->settings.ssh2_keyboard_interactive = 1;
+		} else {
+			pvar->settings.ssh2_keyboard_interactive = 0;
+		}
+	}
 
 	EndDialog(dlg, 1);
 	return TRUE;
@@ -851,11 +976,40 @@ static char FAR *get_auth_method_name(SSHAuthMethod auth)
 
 void AUTH_get_auth_info(PTInstVar pvar, char FAR * dest, int len)
 {
+	char *method = "unknown";
+
 	if (pvar->auth_state.user == NULL) {
 		strncpy(dest, "None", len);
 	} else if (pvar->auth_state.cur_cred.method != SSH_AUTH_NONE) {
-		_snprintf(dest, len, "User '%s', using %s", pvar->auth_state.user,
-				  get_auth_method_name(pvar->auth_state.cur_cred.method));
+		if (SSHv1(pvar)) {
+			_snprintf(dest, len, "User '%s', using %s", pvar->auth_state.user,
+					get_auth_method_name(pvar->auth_state.cur_cred.method));
+
+		} else { 
+			// SSH2:認証メソッドの判別 (2004.12.23 yutaka)
+			// keyboard-interactiveメソッドを追加 (2005.3.12 yutaka)
+			if (pvar->auth_state.cur_cred.method == SSH_AUTH_PASSWORD ||
+				pvar->auth_state.cur_cred.method == SSH_AUTH_TIS) {
+				// keyboard-interactiveメソッドを追加 (2005.1.24 yutaka)
+				if (pvar->keyboard_interactive_done == 1 ||
+					pvar->auth_state.cur_cred.method == SSH_AUTH_TIS) {
+					method = "keyboard-interactive";
+				} else {
+					method = get_auth_method_name(pvar->auth_state.cur_cred.method);
+				}
+				_snprintf(dest, len, "User '%s', using %s", pvar->auth_state.user, method);
+
+			} else {
+				if (pvar->auth_state.cur_cred.key_pair->RSA_key != NULL) {
+					method = "RSA";
+				} else if (pvar->auth_state.cur_cred.key_pair->DSA_key != NULL) {
+					method = "DSA";
+				}
+				_snprintf(dest, len, "User '%s', using %s", pvar->auth_state.user, method);
+			}
+
+		}
+
 	} else {
 		_snprintf(dest, len, "User '%s', using %s", pvar->auth_state.user,
 				  get_auth_method_name(pvar->auth_state.failed_method));
@@ -880,3 +1034,47 @@ void AUTH_end(PTInstVar pvar)
 
 	AUTH_destroy_cur_cred(pvar);
 }
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.11  2005/03/12 15:07:33  yutakakn
+ * SSH2 keyboard-interactive認証をTISダイアログに実装した。
+ *
+ * Revision 1.10  2005/03/12 12:08:05  yutakakn
+ * パスワード認証の前に行うkeyboard-interactiveメソッドで、デフォルト設定値を無効(0)にした。
+ * また、認証ダイアログのラベル名を設定の有無により変更するようにした。
+ *
+ * Revision 1.9  2005/02/22 08:48:11  yutakakn
+ * TTSSH setupダイアログに HeartBeat 設定を追加。
+ * TTSSH authentication setupダイアログに keyboard-interactive 設定を追加。
+ *
+ * Revision 1.8  2005/01/27 13:30:33  yutakakn
+ * 公開鍵認証自動ログインをサポート。
+ * /auth=publickey, /keyfile オプションを新規追加した。
+ * また、空白を含む引数をサポート。
+ *
+ * Revision 1.7  2005/01/25 13:38:22  yutakakn
+ * SSH認証ダイアログで、Rhosts/TISがグレーになる前に、Enterキーを押下すると、
+ * アプリケーションエラーとなる現象に対処した。
+ *
+ * Revision 1.6  2005/01/24 14:07:07  yutakakn
+ * ・keyboard-interactive認証をサポートした。
+ * 　それに伴い、teraterm.iniに "KeyboardInteractive" エントリを追加した。
+ * ・バージョンダイアログに OpenSSLバージョン を追加
+ *
+ * Revision 1.5  2004/12/27 14:35:41  yutakakn
+ * SSH2秘密鍵読み込み失敗時のエラーメッセージを強化した。
+ *
+ * Revision 1.4  2004/12/22 17:28:14  yutakakn
+ * SSH2公開鍵認証(RSA/DSA)をサポートした。
+ *
+ * Revision 1.3  2004/12/16 13:01:09  yutakakn
+ * SSH自動ログインでアプリケーションエラーとなる現象を修正した。
+ *
+ * Revision 1.2  2004/12/01 15:37:49  yutakakn
+ * SSH2自動ログイン機能を追加。
+ * 現状、パスワード認証のみに対応。
+ * ・コマンドライン
+ *   /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+ *
+ */
