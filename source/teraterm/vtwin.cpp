@@ -69,6 +69,12 @@
 static char THIS_FILE[] = __FILE__;
 #endif
 
+// ウィンドウ最大化ボタンを有効にする (2005.1.15 yutaka)
+#define WINDOW_MAXMIMUM_ENABLED 1
+
+// WM_COPYDATAによるプロセス間通信の種別 (2005.1.22 yutaka)
+#define IPC_BROADCAST_COMMAND 1
+
 
 typedef struct {
 	char *name;
@@ -125,6 +131,12 @@ BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	ON_WM_TIMER()
 	ON_WM_VSCROLL()
 	ON_MESSAGE(WM_IME_COMPOSITION,OnIMEComposition)
+//<!--by AKASI
+	ON_MESSAGE(WM_WINDOWPOSCHANGING,OnWindowPosChanging)
+	ON_MESSAGE(WM_SETTINGCHANGE,OnSettingChange)
+	ON_MESSAGE(WM_ENTERSIZEMOVE,OnEnterSizeMove)
+	ON_MESSAGE(WM_EXITSIZEMOVE ,OnExitSizeMove)
+//-->
 	ON_MESSAGE(WM_USER_ACCELCOMMAND, OnAccelCommand)
 	ON_MESSAGE(WM_USER_CHANGEMENU,OnChangeMenu)
 	ON_MESSAGE(WM_USER_CHANGETBAR,OnChangeTBar)
@@ -137,10 +149,15 @@ BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	ON_MESSAGE(WM_USER_GETSERIALNO,OnGetSerialNo)
 	ON_MESSAGE(WM_USER_KEYCODE,OnKeyCode)
 	ON_MESSAGE(WM_USER_PROTOCANCEL,OnProtoEnd)
+	ON_MESSAGE(WM_COPYDATA,OnReceiveIpcMessage)
 	ON_COMMAND(ID_FILE_NEWCONNECTION, OnFileNewConnection)
+	ON_COMMAND(ID_FILE_DUPLICATESESSION, OnDuplicateSession)
 	ON_COMMAND(ID_FILE_CYGWINCONNECTION, OnCygwinConnection)
+	ON_COMMAND(ID_FILE_TERATERMMENU, OnTTMenuLaunch)
+	ON_COMMAND(ID_FILE_LOGMEIN, OnLogMeInLaunch)
 	ON_COMMAND(ID_FILE_LOG, OnFileLog)
 	ON_COMMAND(ID_FILE_COMMENTTOLOG, OnCommentToLog)
+	ON_COMMAND(ID_FILE_VIEWLOG, OnViewLog)
 	ON_COMMAND(ID_FILE_SENDFILE, OnFileSend)
 	ON_COMMAND(ID_FILE_KERMITRCV, OnFileKermitRcv)
 	ON_COMMAND(ID_FILE_KERMITGET, OnFileKermitGet)
@@ -165,7 +182,7 @@ BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	ON_COMMAND(ID_EDIT_CLEARSCREEN, OnEditClearScreen)
 	ON_COMMAND(ID_EDIT_CLEARBUFFER, OnEditClearBuffer)
 	ON_COMMAND(ID_EDIT_SELECTALL, OnSelectAllBuffer)
-	ON_COMMAND(ID_EDIT_EXTERNALSETUP, OnExternalSetup)
+	ON_COMMAND(ID_SETUP_ADDITIONALSETTINGS, OnExternalSetup)
 	ON_COMMAND(ID_SETUP_TERMINAL, OnSetupTerminal)
 	ON_COMMAND(ID_SETUP_WINDOW, OnSetupWindow)
 	ON_COMMAND(ID_SETUP_FONT, OnSetupFont)
@@ -180,6 +197,7 @@ BEGIN_MESSAGE_MAP(CVTWindow, CFrameWnd)
 	ON_COMMAND(ID_CONTROL_AREYOUTHERE, OnControlAreYouThere)
 	ON_COMMAND(ID_CONTROL_SENDBREAK, OnControlSendBreak)
 	ON_COMMAND(ID_CONTROL_RESETPORT, OnControlResetPort)
+	ON_COMMAND(ID_CONTROL_BROADCASTCOMMAND, OnControlBroadcastCommand)
 	ON_COMMAND(ID_CONTROL_OPENTEK, OnControlOpenTEK)
 	ON_COMMAND(ID_CONTROL_CLOSETEK, OnControlCloseTEK)
 	ON_COMMAND(ID_CONTROL_MACRO, OnControlMacro)
@@ -259,6 +277,9 @@ CVTWindow::CVTWindow()
   WNDCLASS wc;
   RECT rect;
   DWORD Style;
+#ifdef ALPHABLEND_TYPE2
+  DWORD ExStyle;
+#endif
   char Temp[MAXPATHLEN];
   int CmdShow;
   PKeyMap tempkm;
@@ -332,6 +353,11 @@ CVTWindow::CVTWindow()
     (*ParseParam)(Temp, &ts, &(TopicName[0]));
   FreeTTSET();
 
+  // duplicate sessionの指定があるなら、共有メモリからコピーする (2004.12.7 yutaka)
+  if (ts.DuplicateSession == 1) {
+	  CopyShmemToTTSet(&ts);
+  }
+
   InitKeyboard();
   SetKeyMap();
 
@@ -353,12 +379,25 @@ CVTWindow::CVTWindow()
   InitDisp();
 
   if (ts.HideTitle>0)
+  {
     Style = WS_VSCROLL | WS_HSCROLL |
 			WS_BORDER | WS_THICKFRAME | WS_POPUP;
+
+#ifdef ALPHABLEND_TYPE2
+     if(BGNoFrame)
+       Style &= ~(WS_BORDER | WS_THICKFRAME);
+#endif
+  }
   else
+#ifdef WINDOW_MAXMIMUM_ENABLED
+    Style = WS_VSCROLL | WS_HSCROLL |
+	    WS_BORDER | WS_THICKFRAME |
+	    WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+#else
     Style = WS_VSCROLL | WS_HSCROLL |
 	    WS_BORDER | WS_THICKFRAME |
 	    WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+#endif
 
   wc.style = CS_DBLCLKS | CS_HREDRAW | CS_VREDRAW;
   wc.lpfnWndProc = AfxWndProc;
@@ -394,6 +433,17 @@ CVTWindow::CVTWindow()
   SetWindowStyle(&ts);
   // ロケールの設定
   setlocale(LC_ALL, ts.Locale);
+
+#ifdef ALPHABLEND_TYPE2
+//<!--by AKASI
+  if(BGNoFrame && ts.HideTitle > 0)
+  {
+    ExStyle  = GetWindowLong(HVTWin,GWL_EXSTYLE);
+    ExStyle &= ~WS_EX_CLIENTEDGE;
+    SetWindowLong(HVTWin,GWL_EXSTYLE,ExStyle);
+  }
+//-->
+#endif
 
 #ifdef TERATERM32
   // set the small icon
@@ -615,17 +665,10 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 {
 	if ( SubMenu == FileMenu )
 	{
-		if ( Connecting )
+		if ( Connecting ) {
 			EnableMenuItem(FileMenu,ID_FILE_NEWCONNECTION,MF_BYCOMMAND | MF_GRAYED);
-		else
-			EnableMenuItem(FileMenu,ID_FILE_NEWCONNECTION,MF_BYCOMMAND | MF_ENABLED);
-
-		if (LogVar!=NULL) { // ログ採取モードの場合
-			EnableMenuItem(FileMenu,ID_FILE_LOG,MF_BYCOMMAND | MF_GRAYED);
-			EnableMenuItem(FileMenu,ID_FILE_COMMENTTOLOG, MF_BYCOMMAND | MF_ENABLED);
 		} else {
-			EnableMenuItem(FileMenu,ID_FILE_LOG,MF_BYCOMMAND | MF_ENABLED);
-			EnableMenuItem(FileMenu,ID_FILE_COMMENTTOLOG, MF_BYCOMMAND | MF_GRAYED);
+			EnableMenuItem(FileMenu,ID_FILE_NEWCONNECTION,MF_BYCOMMAND | MF_ENABLED);
 		}
 
 		if ( (! cv.Ready) || (SendVar!=NULL) || (FileVar!=NULL) ||
@@ -635,13 +678,32 @@ void CVTWindow::InitMenuPopup(HMENU SubMenu)
 			EnableMenuItem(FileMenu,ID_TRANSFER,MF_BYPOSITION | MF_GRAYED); /* Transfer */
 			EnableMenuItem(FileMenu,ID_FILE_CHANGEDIR,MF_BYCOMMAND | MF_GRAYED);
 			EnableMenuItem(FileMenu,ID_FILE_DISCONNECT,MF_BYCOMMAND | MF_GRAYED);
+			EnableMenuItem(FileMenu,ID_FILE_DUPLICATESESSION,MF_BYCOMMAND | MF_GRAYED);
 		}
 		else {
 			EnableMenuItem(FileMenu,ID_FILE_SENDFILE,MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(FileMenu,ID_TRANSFER,MF_BYPOSITION | MF_ENABLED); /* Transfer */
 			EnableMenuItem(FileMenu,ID_FILE_CHANGEDIR,MF_BYCOMMAND | MF_ENABLED);
 			EnableMenuItem(FileMenu,ID_FILE_DISCONNECT,MF_BYCOMMAND | MF_ENABLED);
+			EnableMenuItem(FileMenu,ID_FILE_DUPLICATESESSION,MF_BYCOMMAND | MF_ENABLED);
 		}
+
+		// 新規メニューを追加 (2004.12.5 yutaka)
+		EnableMenuItem(FileMenu,ID_FILE_CYGWINCONNECTION,MF_BYCOMMAND | MF_ENABLED);
+		EnableMenuItem(FileMenu,ID_FILE_TERATERMMENU,MF_BYCOMMAND | MF_ENABLED);
+		EnableMenuItem(FileMenu,ID_FILE_LOGMEIN,MF_BYCOMMAND | MF_ENABLED);
+
+		// XXX: この位置にしないと、logがグレイにならない。 (2005.2.1 yutaka)
+		if (LogVar!=NULL) { // ログ採取モードの場合
+			EnableMenuItem(FileMenu,ID_FILE_LOG,MF_BYCOMMAND | MF_GRAYED);
+			EnableMenuItem(FileMenu,ID_FILE_COMMENTTOLOG, MF_BYCOMMAND | MF_ENABLED);
+			EnableMenuItem(FileMenu,ID_FILE_VIEWLOG, MF_BYCOMMAND | MF_ENABLED);
+		} else {
+			EnableMenuItem(FileMenu,ID_FILE_LOG,MF_BYCOMMAND | MF_ENABLED);
+			EnableMenuItem(FileMenu,ID_FILE_COMMENTTOLOG, MF_BYCOMMAND | MF_GRAYED);
+			EnableMenuItem(FileMenu,ID_FILE_VIEWLOG, MF_BYCOMMAND | MF_GRAYED);
+		}
+
 	}
 	else if ( SubMenu == TransMenu )
 	{
@@ -786,6 +848,11 @@ void CVTWindow::RestoreSetup()
     (*ReadIniFile)(ts.SetupFName,&ts);
   FreeTTSET();
 
+#ifdef ALPHABLEND_TYPE2
+  BGInitialize();
+  BGSetupPrimary(TRUE);
+#endif
+
   ChangeDefaultSet(&ts,NULL);
 
   ResetSetup();
@@ -872,7 +939,14 @@ LRESULT CVTWindow::DefWindowProc(UINT message, WPARAM wParam, LPARAM lParam)
   {
     Result = CFrameWnd::DefWindowProc(message,wParam,lParam);
     if ((Result==HTCLIENT) && AltKey())
-      Result = HTCAPTION;
+#ifdef ALPHABLEND_TYPE2
+    	if(ShiftKey())
+    		Result = HTBOTTOMRIGHT;
+	    else
+	    	Result = HTCAPTION;
+#else
+		Result = HTCAPTION;
+#endif
     return Result;
   }
 
@@ -1103,10 +1177,12 @@ void CVTWindow::OnDropFiles(HDROP hDropInfo)
 
 void CVTWindow::OnGetMinMaxInfo(MINMAXINFO FAR* lpMMI)
 {
-  lpMMI->ptMaxSize.x = 10000;
-  lpMMI->ptMaxSize.y = 10000;
-  lpMMI->ptMaxTrackSize.x = 10000;
-  lpMMI->ptMaxTrackSize.y = 10000;
+#ifndef WINDOW_MAXMIMUM_ENABLED
+	lpMMI->ptMaxSize.x = 10000;
+	lpMMI->ptMaxSize.y = 10000;
+	lpMMI->ptMaxTrackSize.x = 10000;
+	lpMMI->ptMaxTrackSize.y = 10000;
+#endif
 }
 
 void CVTWindow::OnHScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
@@ -1291,6 +1367,12 @@ void CVTWindow::OnPaint()
   HDC PaintDC;
   int Xs, Ys, Xe, Ye;
 
+#ifdef ALPHABLEND_TYPE2
+//<!--by AKASI
+  BGSetupPrimary(FALSE);
+//-->
+#endif
+
   cdc = BeginPaint(&ps);
   PaintDC = cdc->GetSafeHdc();
 
@@ -1337,35 +1419,41 @@ void CVTWindow::OnSetFocus(CWnd* pOldWnd)
 
 void CVTWindow::OnSize(UINT nType, int cx, int cy)
 {
-  RECT R;
-  int w, h;
+	RECT R;
+	int w, h;
 
-  Minimized = (nType==SIZE_MINIMIZED);
+	Minimized = (nType==SIZE_MINIMIZED);
 
-  if (FirstPaint && Minimized)
-  {
-    if (strlen(TopicName)>0)
-    {
-      InitDDE();
-      SendDDEReady();
-    }
-    FirstPaint = FALSE;
-    Startup();
-    return;
-  }
-  if (Minimized || DontChangeSize) return;
+	if (FirstPaint && Minimized)
+	{
+		if (strlen(TopicName)>0)
+		{
+			InitDDE();
+			SendDDEReady();
+		}
+		FirstPaint = FALSE;
+		Startup();
+		return;
+	}
+	if (Minimized || DontChangeSize) return;
 
-  ::GetWindowRect(HVTWin,&R);
-  w = R.right - R.left;
-  h = R.bottom - R.top;
-  if (AdjustSize)
-    ResizeWindow(R.left,R.top,w,h,cx,cy);
-  else {
-    w = cx / FontWidth;
-    h = cy / FontHeight;
-    HideStatusLine();
-    BuffChangeWinSize(w,h);
-  }
+	::GetWindowRect(HVTWin,&R);
+	w = R.right - R.left;
+	h = R.bottom - R.top;
+	if (AdjustSize)
+		ResizeWindow(R.left,R.top,w,h,cx,cy);
+	else {
+		w = cx / FontWidth;
+		h = cy / FontHeight;
+		HideStatusLine();
+		BuffChangeWinSize(w,h);
+	}
+
+#ifdef WINDOW_MAXMIMUM_ENABLED
+	if (nType == SIZE_MAXIMIZED) {
+		AdjustSize = 0;
+	}
+#endif
 }
 
 void CVTWindow::OnSysChar(UINT nChar, UINT nRepCnt, UINT nFlags)
@@ -1516,6 +1604,42 @@ void CVTWindow::OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar)
   }
   DispVScroll(Func,nPos);
 }
+
+//<!--by AKASI
+LONG CVTWindow::OnWindowPosChanging(UINT wParam, LONG lParam)
+{
+#ifdef ALPHABLEND_TYPE2
+  if(BGEnable && BGNoCopyBits)
+    ((WINDOWPOS*)lParam)->flags |= SWP_NOCOPYBITS;
+#endif
+
+  return CFrameWnd::DefWindowProc(WM_WINDOWPOSCHANGING,wParam,lParam);
+}
+
+LONG CVTWindow::OnSettingChange(UINT wParam, LONG lParam)
+{
+#ifdef ALPHABLEND_TYPE2
+  BGOnSettingChange();
+#endif
+  return CFrameWnd::DefWindowProc(WM_SETTINGCHANGE,wParam,lParam);
+}
+
+LONG CVTWindow::OnEnterSizeMove(UINT wParam, LONG lParam)
+{
+#ifdef ALPHABLEND_TYPE2
+  BGOnEnterSizeMove();
+#endif
+  return CFrameWnd::DefWindowProc(WM_ENTERSIZEMOVE,wParam,lParam);
+}
+
+LONG CVTWindow::OnExitSizeMove(UINT wParam, LONG lParam)
+{
+#ifdef ALPHABLEND_TYPE2
+  BGOnExitSizeMove();
+#endif
+  return CFrameWnd::DefWindowProc(WM_EXITSIZEMOVE,wParam,lParam);
+}
+//-->
 
 LONG CVTWindow::OnIMEComposition(UINT wParam, LONG lParam)
 {
@@ -1713,20 +1837,50 @@ LONG CVTWindow::OnChangeMenu(UINT wParam, LONG lParam)
 LONG CVTWindow::OnChangeTBar(UINT wParam, LONG lParam)
 {
   BOOL TBar;
-  DWORD Style;
+  DWORD Style,ExStyle;
   HMENU SysMenu;
 
   Style = GetWindowLong (HVTWin, GWL_STYLE);
+   ExStyle = GetWindowLong (HVTWin, GWL_EXSTYLE);
   TBar = ((Style & WS_SYSMENU)!=0);
   if (TBar == (ts.HideTitle==0)) return 0;
+
+#ifndef WINDOW_MAXMIMUM_ENABLED
   if (ts.HideTitle>0)
     Style = Style & ~(WS_SYSMENU | WS_CAPTION |
 		      WS_MINIMIZEBOX) | WS_BORDER | WS_POPUP;
   else
     Style = Style & ~WS_POPUP | WS_SYSMENU | WS_CAPTION |
 	    WS_MINIMIZEBOX;
+#else
+  if (ts.HideTitle>0)
+  {
+    Style = Style & ~(WS_SYSMENU | WS_CAPTION |
+	WS_MINIMIZEBOX | WS_MAXIMIZEBOX) | WS_BORDER | WS_POPUP;
+
+#ifdef ALPHABLEND_TYPE2
+     if(BGNoFrame)
+     {
+       Style   &= ~(WS_THICKFRAME | WS_BORDER);
+       ExStyle &= ~WS_EX_CLIENTEDGE;
+     }else{
+       ExStyle |=  WS_EX_CLIENTEDGE;
+     }
+#endif
+  }
+  else {
+    Style = Style & ~WS_POPUP | WS_SYSMENU | WS_CAPTION |
+	    WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME | WS_BORDER;
+
+       ExStyle |=  WS_EX_CLIENTEDGE;
+  }
+#endif
+
   AdjustSize = TRUE;
   SetWindowLong(HVTWin, GWL_STYLE, Style);
+#ifdef ALPHABLEND_TYPE2
+  SetWindowLong(HVTWin, GWL_EXSTYLE, ExStyle);
+#endif
   ::SetWindowPos(HVTWin, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE |
 		 SWP_NOZORDER | SWP_FRAMECHANGED);
   ::ShowWindow(HVTWin, SW_SHOW);
@@ -1994,6 +2148,51 @@ void CVTWindow::OnFileNewConnection()
   FreeTTDLG();
 }
 
+
+// すでに開いているセッションの複製を作る
+// (2004.12.6 yutaka)
+void CVTWindow::OnDuplicateSession()
+{
+	char Command[MAX_PATH] = "notepad.exe";
+	char *exec = "ttermpro";
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	// 現在の設定内容を共有メモリへコピーしておく
+	CopyTTSetToShmem(&ts);
+
+	if (ts.TCPPort == 23) { // telnet
+		_snprintf(Command, sizeof(Command), "%s %s:%d /DUPLICATE /nossh", 
+			exec, ts.HostName, ts.TCPPort);
+
+	} else if (ts.TCPPort == 22) { // SSH
+		// ここの処理は TTSSH 側にやらせるべき (2004.12.7 yutaka)
+		_snprintf(Command, sizeof(Command), "%s %s:%d /DUPLICATE /ssh", 
+			exec, ts.HostName, ts.TCPPort);
+
+	} else {
+		return;
+
+	}
+
+	memset(&si, 0, sizeof(si));
+	GetStartupInfo(&si);
+	memset(&pi, 0, sizeof(pi));
+
+	if (CreateProcess(
+			NULL, 
+			Command, 
+			NULL, NULL, FALSE, 0,
+			NULL, NULL,
+			&si, &pi) == 0) {
+		char buf[80];
+		_snprintf(buf, sizeof(buf), "Can't execute TeraTerm. (%d)", GetLastError());
+		::MessageBox(NULL, buf, "ERROR", MB_OK | MB_ICONWARNING);
+	}
+
+}
+
+
 //
 // Connect to local cygwin
 //
@@ -2043,6 +2242,62 @@ found_path:;
 		::MessageBox(NULL, "Can't execute Cygterm.", "ERROR", MB_OK | MB_ICONWARNING);
 	}
 }
+
+
+//
+// TeraTerm Menuの起動
+//
+void CVTWindow::OnTTMenuLaunch()
+{
+	char *exename = "ttpmenu.exe";
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	memset(&si, 0, sizeof(si));
+	GetStartupInfo(&si);
+	memset(&pi, 0, sizeof(pi));
+
+	if (CreateProcess(
+			NULL, 
+			exename, 
+			NULL, NULL, FALSE, 0,
+			NULL, NULL,
+			&si, &pi) == 0) {
+		char buf[80];
+		_snprintf(buf, sizeof(buf), "Can't execute TeraTerm Menu. (%d)", GetLastError());
+		::MessageBox(NULL, buf, "ERROR", MB_OK | MB_ICONWARNING);
+	}
+}
+
+
+//
+// LogMeInの起動
+//
+// URL: http://www.neocom.ca/freeware/LogMeIn/
+//
+void CVTWindow::OnLogMeInLaunch()
+{
+	// LogMeIn.exe -> LogMeTT.exe へリネーム (2005.2.21 yutaka)
+	char *exename = "LogMeTT.exe";
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	memset(&si, 0, sizeof(si));
+	GetStartupInfo(&si);
+	memset(&pi, 0, sizeof(pi));
+
+	if (CreateProcess(
+			NULL, 
+			exename, 
+			NULL, NULL, FALSE, 0,
+			NULL, NULL,
+			&si, &pi) == 0) {
+		char buf[80];
+		_snprintf(buf, sizeof(buf), "Can't execute LogMeTT. (%d)", GetLastError());
+		::MessageBox(NULL, buf, "ERROR", MB_OK | MB_ICONWARNING);
+	}
+}
+
 
 void CVTWindow::OnFileLog()
 {
@@ -2098,6 +2353,39 @@ void CVTWindow::OnCommentToLog()
 		ret = GetLastError();
 	}
 
+}
+
+
+// ログの閲覧 (2005.1.29 yutaka)
+void CVTWindow::OnViewLog()
+{
+	char command[MAX_PATH];
+	char *file;
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	if (LogVar == NULL || !LogVar->FileOpen) {
+		return;
+	}
+
+	file = LogVar->FullName;
+
+	memset(&si, 0, sizeof(si));
+	GetStartupInfo(&si);
+	memset(&pi, 0, sizeof(pi));
+
+	_snprintf(command, sizeof(command), "%s %s", ts.ViewlogEditor, file);
+
+	if (CreateProcess(
+			NULL, 
+			command, 
+			NULL, NULL, FALSE, 0,
+			NULL, NULL,
+			&si, &pi) == 0) {
+		char buf[80];
+		_snprintf(buf, sizeof(buf), "Can't view logging file. (%d)", GetLastError());
+		::MessageBox(NULL, buf, "ERROR", MB_OK | MB_ICONWARNING);
+	}
 }
 
 
@@ -2258,6 +2546,145 @@ void CVTWindow::OnSelectAllBuffer()
 }
 
 
+
+// Additional settingsで使うタブコントロールの親ハンドル
+static HWND gTabControlParent;
+
+// log tab
+static LRESULT CALLBACK OnTabSheetLogProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+	HWND hWnd;
+
+    switch (msg) {
+        case WM_INITDIALOG:
+			// (7)Viewlog Editor path (2005.1.29 yutaka)
+			hWnd = GetDlgItem(hDlgWnd, IDC_VIEWLOG_EDITOR);
+			SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)ts.ViewlogEditor);
+
+			// ダイアログにフォーカスを当てる 
+			SetFocus(GetDlgItem(hDlgWnd, IDC_VIEWLOG_EDITOR));
+
+			return FALSE;
+
+        case WM_COMMAND:
+			switch (wp) {
+				case IDC_VIEWLOG_PATH | (BN_CLICKED << 16):
+					{
+					OPENFILENAME ofn;
+
+					ZeroMemory(&ofn, sizeof(ofn));
+					ofn.lStructSize = sizeof(ofn);
+					ofn.hwndOwner = hDlgWnd;
+					ofn.lpstrFilter = "exe(*.exe)\0*.exe\0all(*.*)\0*.*\0\0";
+					ofn.lpstrFile = ts.ViewlogEditor;
+					ofn.nMaxFile = sizeof(ts.ViewlogEditor);
+					ofn.lpstrTitle = "Choose a executing file with launching logging file";
+					ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_FORCESHOWHIDDEN | OFN_HIDEREADONLY;
+					if (GetOpenFileName(&ofn) != 0) {
+						hWnd = GetDlgItem(hDlgWnd, IDC_VIEWLOG_EDITOR);
+						SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)ts.ViewlogEditor);
+					}
+					}
+					return TRUE;
+			}
+
+			switch (LOWORD(wp)) {
+                case IDOK:
+					// (6)
+					hWnd = GetDlgItem(hDlgWnd, IDC_VIEWLOG_EDITOR);
+					SendMessage(hWnd, WM_GETTEXT , sizeof(ts.ViewlogEditor), (LPARAM)ts.ViewlogEditor);
+
+                    EndDialog(hDlgWnd, IDOK);
+					SendMessage(gTabControlParent, WM_CLOSE, 0, 0);
+                    break;
+
+                case IDCANCEL:
+                    EndDialog(hDlgWnd, IDCANCEL);
+					SendMessage(gTabControlParent, WM_CLOSE, 0, 0);
+                    break;
+
+                default:
+                    return FALSE;
+            }
+
+        case WM_CLOSE:
+		    EndDialog(hDlgWnd, 0);
+			return TRUE;
+
+        default:
+            return FALSE;
+    }
+    return TRUE;
+}
+
+// visual tab
+static LRESULT CALLBACK OnTabSheetVisualProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+	HWND hWnd;
+	char buf[MAXPATHLEN];
+	LRESULT ret;
+
+    switch (msg) {
+        case WM_INITDIALOG:
+			// (1)AlphaBlend 
+			hWnd = GetDlgItem(hDlgWnd, IDC_ALPHA_BLEND);
+			_snprintf(buf, sizeof(buf), "%d", ts.AlphaBlend);
+			SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)buf);
+
+			// (2)[BG] BGEnable 
+			hWnd = GetDlgItem(hDlgWnd, IDC_ETERM_LOOKFEEL);
+			if (BGEnable) {
+				SendMessage(hWnd, BM_SETCHECK, BST_CHECKED, 0);
+			} else {
+				SendMessage(hWnd, BM_SETCHECK, BST_UNCHECKED, 0);
+			}
+
+			// ダイアログにフォーカスを当てる 
+			SetFocus(GetDlgItem(hDlgWnd, IDC_ALPHA_BLEND));
+
+			return FALSE;
+
+        case WM_COMMAND:
+			switch (LOWORD(wp)) {
+                case IDOK:
+					// (1)
+					hWnd = GetDlgItem(hDlgWnd, IDC_ALPHA_BLEND);
+					SendMessage(hWnd, WM_GETTEXT , sizeof(buf), (LPARAM)buf);
+					ts.AlphaBlend = atoi(buf);
+
+					// (2)
+					hWnd = GetDlgItem(hDlgWnd, IDC_ETERM_LOOKFEEL);
+					ret = SendMessage(hWnd, BM_GETCHECK , 0, 0);
+					if (ret & BST_CHECKED) {
+						BGEnable = 1;
+					} else {
+						BGEnable = 0;
+					}
+
+                    EndDialog(hDlgWnd, IDOK);
+					SendMessage(gTabControlParent, WM_CLOSE, 0, 0);
+                    break;
+
+                case IDCANCEL:
+                    EndDialog(hDlgWnd, IDCANCEL);
+					SendMessage(gTabControlParent, WM_CLOSE, 0, 0);
+                    break;
+
+                default:
+                    return FALSE;
+            }
+
+        case WM_CLOSE:
+		    EndDialog(hDlgWnd, 0);
+			return TRUE;
+
+        default:
+            return FALSE;
+    }
+    return TRUE;
+}
+
+
 //
 // cf. http://homepage2.nifty.com/DSS/VCPP/API/SHBrowseForFolder.htm
 //
@@ -2315,7 +2742,6 @@ static void doSelectFolder(HWND hWnd, char *path, int pathlen)
 	lpMalloc->Release();
 }
 
-
 static void SetupRGBbox(HWND hDlgWnd, int index)
 {
 	HWND hWnd;
@@ -2338,8 +2764,8 @@ static void SetupRGBbox(HWND hDlgWnd, int index)
 	SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)buf);
 }
 
-
-static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
+// general tab
+static LRESULT CALLBACK OnTabSheetGeneralProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
 	static HDC label_hdc = NULL;
 	HWND hWnd;
@@ -2364,10 +2790,12 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 			}
 			SendMessage(hWnd, LB_SELECTSTRING , 0, (LPARAM)ts.MouseCursorName);
 
+#if 0
 			// (3)AlphaBlend 
 			hWnd = GetDlgItem(hDlgWnd, IDC_ALPHA_BLEND);
 			_snprintf(buf, sizeof(buf), "%d", ts.AlphaBlend);
 			SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)buf);
+#endif
 
 			// (4)Cygwin install path
 			hWnd = GetDlgItem(hDlgWnd, IDC_CYGWIN_PATH);
@@ -2385,6 +2813,15 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 			}
 			SetupRGBbox(hDlgWnd, 0);
 
+#if 0
+			// (7)Viewlog Editor path (2005.1.29 yutaka)
+			hWnd = GetDlgItem(hDlgWnd, IDC_VIEWLOG_EDITOR);
+			SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)ts.ViewlogEditor);
+#endif
+
+			// ダイアログにフォーカスを当てる (2004.12.7 yutaka)
+			SetFocus(GetDlgItem(hDlgWnd, IDC_LINECOPY));
+
 			return FALSE;
 
         case WM_COMMAND:
@@ -2399,6 +2836,27 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 					hWnd = GetDlgItem(hDlgWnd, IDC_CYGWIN_PATH);
 					SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)ts.CygwinDirectory);
 					return TRUE;
+
+#if 0
+				case IDC_VIEWLOG_PATH | (BN_CLICKED << 16):
+					{
+					OPENFILENAME ofn;
+
+					ZeroMemory(&ofn, sizeof(ofn));
+					ofn.lStructSize = sizeof(ofn);
+					ofn.hwndOwner = hDlgWnd;
+					ofn.lpstrFilter = "exe(*.exe)\0*.exe\0all(*.*)\0*.*\0\0";
+					ofn.lpstrFile = ts.ViewlogEditor;
+					ofn.nMaxFile = sizeof(ts.ViewlogEditor);
+					ofn.lpstrTitle = "Choose a executing file with launching logging file";
+					ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_FORCESHOWHIDDEN | OFN_HIDEREADONLY;
+					if (GetOpenFileName(&ofn) != 0) {
+						hWnd = GetDlgItem(hDlgWnd, IDC_VIEWLOG_EDITOR);
+						SendMessage(hWnd, WM_SETTEXT , 0, (LPARAM)ts.ViewlogEditor);
+					}
+					}
+					return TRUE;
+#endif
 
 				case IDC_ANSI_COLOR | (LBN_SELCHANGE << 16):
 					hWnd = GetDlgItem(hDlgWnd, IDC_ANSI_COLOR);
@@ -2453,10 +2911,12 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 						strcpy(ts.MouseCursorName, MouseCursor[lr].name);
 					}
 
+#if 0
 					// (3)
 					hWnd = GetDlgItem(hDlgWnd, IDC_ALPHA_BLEND);
 					SendMessage(hWnd, WM_GETTEXT , sizeof(buf), (LPARAM)buf);
 					ts.AlphaBlend = atoi(buf);
+#endif
 
 					// (4)
 					hWnd = GetDlgItem(hDlgWnd, IDC_CYGWIN_PATH);
@@ -2466,12 +2926,19 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 					hWnd = GetDlgItem(hDlgWnd, IDC_DELIM_LIST);
 					SendMessage(hWnd, WM_GETTEXT , sizeof(ts.DelimList), (LPARAM)ts.DelimList);
 
+#if 0
+					// (6)
+					hWnd = GetDlgItem(hDlgWnd, IDC_VIEWLOG_EDITOR);
+					SendMessage(hWnd, WM_GETTEXT , sizeof(ts.ViewlogEditor), (LPARAM)ts.ViewlogEditor);
+#endif
 
                     EndDialog(hDlgWnd, IDOK);
+					SendMessage(gTabControlParent, WM_CLOSE, 0, 0);
                     break;
 
                 case IDCANCEL:
                     EndDialog(hDlgWnd, IDCANCEL);
+					SendMessage(gTabControlParent, WM_CLOSE, 0, 0);
                     break;
 
                 default:
@@ -2482,6 +2949,7 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 		    EndDialog(hDlgWnd, 0);
 			return TRUE;
 
+#if 0
 		case WM_CTLCOLORSTATIC :
 			{
 				HDC		hDC = (HDC)wp;
@@ -2509,6 +2977,7 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
 				}
 			}
 			break ;
+#endif
 
 
         default:
@@ -2517,13 +2986,154 @@ static LRESULT CALLBACK OnExtSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPA
     return TRUE;
 }
 
-// コンフィグレーションダイアログ
+#if 0
+// tab control: child
+static LRESULT CALLBACK OnTabSheetDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+	switch (msg) {
+        case WM_INITDIALOG:
+			return TRUE;
+
+		default:
+			return FALSE;
+	}
+}
+#endif
+
+// tab control: main
+// cf. http://home.a03.itscom.net/tsuzu/programing/tips28.htm
+static LRESULT CALLBACK OnAdditionalSetupDlgProc(HWND hDlgWnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+	TCITEM tc;
+	RECT rect;
+	LPPOINT pt = (LPPOINT)&rect;
+	NMHDR *nm = (NMHDR *)lp;
+	// dialog handle
+	static HWND hTabCtrl; // parent
+	static HWND hTabSheetGeneral; // 0
+	static HWND hTabSheetVisual; // 1
+	static HWND hTabSheetLog; // 2
+
+	switch (msg) {
+        case WM_INITDIALOG:
+			gTabControlParent = hDlgWnd;
+
+			// コモンコントロールの初期化
+			InitCommonControls();
+
+			// シート枠の作成
+			hTabCtrl = GetDlgItem(hDlgWnd, IDC_SETUP_TAB);
+			ZeroMemory(&tc, sizeof(tc));
+			tc.mask = TCIF_TEXT;
+			tc.pszText = "General";
+			TabCtrl_InsertItem(hTabCtrl, 0, &tc);
+
+			ZeroMemory(&tc, sizeof(tc));
+			tc.mask = TCIF_TEXT;
+			tc.pszText = "Visual";
+			TabCtrl_InsertItem(hTabCtrl, 1, &tc);
+
+			ZeroMemory(&tc, sizeof(tc));
+			tc.mask = TCIF_TEXT;
+			tc.pszText = "Log";
+			TabCtrl_InsertItem(hTabCtrl, 2, &tc);
+
+			// シートに載せる子ダイアログの作成
+			hTabSheetGeneral = CreateDialog(
+							hInst, 
+							MAKEINTRESOURCE(IDD_TABSHEET_GENERAL), 
+							hDlgWnd,
+							(DLGPROC)OnTabSheetGeneralProc
+							);
+
+			hTabSheetVisual = CreateDialog(
+							hInst, 
+							MAKEINTRESOURCE(IDD_TABSHEET_VISUAL), 
+							hDlgWnd,
+							(DLGPROC)OnTabSheetVisualProc
+							);
+
+			hTabSheetLog = CreateDialog(
+							hInst, 
+							MAKEINTRESOURCE(IDD_TABSHEET_LOG), 
+							hDlgWnd,
+							(DLGPROC)OnTabSheetLogProc
+							);
+
+			// タブコントロールの矩形座標を取得
+			// 親ウィンドウがhDlgなので座標変換が必要(MapWindowPoints)
+			GetClientRect(hTabCtrl, &rect);
+			TabCtrl_AdjustRect(hTabCtrl, FALSE, &rect);
+			MapWindowPoints(hTabCtrl, hDlgWnd, pt, 2);
+
+			// 生成した子ダイアログをタブシートの上に貼り付ける
+			// 実際は子ダイアログの表示位置をシート上に移動しているだけ
+			MoveWindow(hTabSheetGeneral, 
+				rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, FALSE);
+			MoveWindow(hTabSheetVisual, 
+				rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, FALSE);
+			MoveWindow(hTabSheetLog, 
+				rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, FALSE);
+		
+			ShowWindow(hTabSheetGeneral, SW_SHOW);
+
+			return FALSE;
+
+		case WM_NOTIFY:
+        	// タブコントロールのシート切り替え通知なら
+        	switch (nm->code) {
+        	case TCN_SELCHANGE:
+            	if (nm->hwndFrom == hTabCtrl) {
+                	// 現在表示されているのシートの番号を判別
+                	switch (TabCtrl_GetCurSel(hTabCtrl)) {
+                	case 0:
+                    	// シートの切り替え
+                    	ShowWindow(hTabSheetGeneral, SW_SHOW);
+                    	ShowWindow(hTabSheetVisual, SW_HIDE);
+                    	ShowWindow(hTabSheetLog, SW_HIDE);
+                    	break;
+
+                	case 1:
+                    	ShowWindow(hTabSheetGeneral, SW_HIDE);
+                    	ShowWindow(hTabSheetVisual, SW_SHOW);
+                    	ShowWindow(hTabSheetLog, SW_HIDE);
+                    	break;
+
+                	case 2:
+                    	ShowWindow(hTabSheetGeneral, SW_HIDE);
+                    	ShowWindow(hTabSheetVisual, SW_HIDE);
+                    	ShowWindow(hTabSheetLog, SW_SHOW);
+                    	break;
+                	}
+            	}
+            	break;
+        	}
+			return TRUE;
+
+		case WM_CLOSE:
+			EndDialog(hTabSheetGeneral, FALSE);
+			EndDialog(hTabSheetVisual, FALSE);
+			EndDialog(hTabSheetLog, FALSE);
+			EndDialog(hDlgWnd, FALSE);
+			return TRUE;
+
+        default:
+            return FALSE;
+	}
+
+    return TRUE;
+}
+
+// Additional settings dialog
+//
+// (2004.9.5 yutaka) new added
+// (2005.2.22 yutaka) changed to Tab Control
 void CVTWindow::OnExternalSetup()
 {
 	DWORD ret;
 
 	// 設定ダイアログ (2004.9.5 yutaka)
-	ret = DialogBox(hInst, MAKEINTRESOURCE(IDD_EXTERNAL_SETUP), HVTWin, (DLGPROC)OnExtSetupDlgProc);
+	ret = DialogBox(hInst, MAKEINTRESOURCE(IDD_ADDITIONAL_SETUPTAB), HVTWin, (DLGPROC)OnAdditionalSetupDlgProc);
 	if (ret == 0 || ret == -1) {
 		ret = GetLastError();
 	}
@@ -2720,6 +3330,183 @@ void CVTWindow::OnControlResetPort()
   CommResetSerial(&ts,&cv);
 }
 
+
+
+//
+// すべてのターミナルへ同一コマンドを送信するモードレスダイアログの表示
+// (2005.1.22 yutaka)
+//
+static LRESULT CALLBACK BroadcastCommandDlgProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+	char buf[256 + 3];
+	UINT ret;
+	LRESULT checked;
+
+    switch (msg) {
+        case WM_INITDIALOG:
+			// ラジオボタンのデフォルトは CR にする。
+			SendMessage(GetDlgItem(hWnd, IDC_RADIO_CR), BM_SETCHECK, BST_CHECKED, 0);
+			// デフォルトでチェックボックスを checked 状態にする。
+			SendMessage(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), BM_SETCHECK, BST_CHECKED, 0);
+
+			// エディットコントロールにフォーカスをあてる
+			SetFocus(GetDlgItem(hWnd, IDC_COMMAND_EDIT));
+
+			return FALSE;
+
+        case WM_COMMAND:
+			switch (wp) {
+			case IDC_ENTERKEY_CHECK | (BN_CLICKED << 16):
+				// チェックの有無により、ラジオボタンの有効・無効を決める。
+				checked = SendMessage(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), BM_GETCHECK, 0, 0);
+				if (checked & BST_CHECKED) { // 改行コードあり
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CR), TRUE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_LF), TRUE);
+
+				} else {
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CRLF), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_CR), FALSE);
+					EnableWindow(GetDlgItem(hWnd, IDC_RADIO_LF), FALSE);
+				}
+				return TRUE;
+			}
+
+            switch (LOWORD(wp)) {
+                case IDOK:
+					{
+					int i;
+					HWND hd;
+					COPYDATASTRUCT cds;
+
+					memset(buf, 0, sizeof(buf));
+					ret = GetDlgItemText(hWnd, IDC_COMMAND_EDIT, buf, 256 - 1);
+					if (ret == 0) { // error
+						memset(buf, 0, sizeof(buf));
+					}
+
+					checked = SendMessage(GetDlgItem(hWnd, IDC_ENTERKEY_CHECK), BM_GETCHECK, 0, 0);
+					if (checked & BST_CHECKED) { // 改行コードあり
+						if (SendMessage(GetDlgItem(hWnd, IDC_RADIO_CRLF), BM_GETCHECK, 0, 0) & BST_CHECKED) {
+							strcat(buf, "\r\n");
+
+						} else if (SendMessage(GetDlgItem(hWnd, IDC_RADIO_CR), BM_GETCHECK, 0, 0) & BST_CHECKED) {
+							strcat(buf, "\r");
+
+						} else if (SendMessage(GetDlgItem(hWnd, IDC_RADIO_LF), BM_GETCHECK, 0, 0) & BST_CHECKED) {
+							strcat(buf, "\n");
+
+						} else {
+							strcat(buf, "\r");
+
+						}
+					}
+
+					// すべてのTeraTermにメッセージとデータを送る
+					for (i = 0 ; i < 50 ; i++) { // 50 = MAXNWIN(@ ttcmn.c)
+						hd = GetNthWin(i);
+						if (hd == NULL)
+							break;
+
+						ZeroMemory(&cds, sizeof(cds));
+						cds.dwData = IPC_BROADCAST_COMMAND;
+						cds.cbData = strlen(buf);
+						cds.lpData = buf;
+
+						// WM_COPYDATAを使って、プロセス間通信を行う。
+						SendMessage(hd, WM_COPYDATA, (WPARAM)HVTWin, (LPARAM)&cds);
+
+						// 送信先TeraTermウィンドウのリフレッシュを行う。
+						// これをしないと、送り込んだデータが反映されない模様。暫定処置。
+						if (hd != HVTWin) {
+							ShowWindow(hd, SW_MINIMIZE);
+							ShowWindow(hd, SW_RESTORE);
+						}
+					}
+
+					// FIXME: 自分自身をアクティブにする。でも、どうも効かないらしい。
+					BringWindowToTop(HVTWin);
+					ShowWindow(HVTWin, SW_SHOW);
+
+					}
+
+                    //EndDialog(hDlgWnd, IDOK);
+                    return TRUE;
+
+                case IDCANCEL:
+				    EndDialog(hWnd, 0);
+					//DestroyWindow(hWnd);
+					return TRUE;
+
+                default:
+                    return FALSE;
+            }
+			break;
+
+        case WM_CLOSE:
+			//DestroyWindow(hWnd);
+		    EndDialog(hWnd, 0);
+			return TRUE;
+
+        default:
+            return FALSE;
+    }
+    return TRUE;
+
+}
+
+void CVTWindow::OnControlBroadcastCommand(void)
+{
+	// TODO: モードレスダイアログのハンドルは、親プロセスが DestroyWindow() APIで破棄する
+	// 必要があるが、ここはOS任せとする。
+	static HWND hDlgWnd = NULL;
+
+	if (hDlgWnd != NULL)
+		goto activate;
+
+	hDlgWnd = CreateDialog(
+				hInst, 
+				MAKEINTRESOURCE(IDD_BROADCAST_DIALOG), 
+				HVTWin, 
+				(DLGPROC)BroadcastCommandDlgProc
+				);
+
+	if (hDlgWnd == NULL)
+		return;
+
+activate:;
+	::ShowWindow(hDlgWnd, SW_SHOW);
+
+}
+
+// WM_COPYDATAの受信
+LONG CVTWindow::OnReceiveIpcMessage(UINT wParam, LONG lParam)
+{
+	int i, len;
+	COPYDATASTRUCT *cds;
+	char *buf;
+
+	if (!cv.Ready)
+		return 0;
+
+	cds = (COPYDATASTRUCT *)lParam;
+	len = cds->cbData;
+	buf = (char *)cds->lpData;
+	if (cds->dwData == IPC_BROADCAST_COMMAND) {
+		// 端末へ文字列を送り込む
+		for (i = 0 ; i < len ; i++) {
+			FSOut1(buf[i]);
+			if (ts.LocalEcho > 0) {
+				FSEcho1(buf[i]);
+			}
+		}
+	}
+
+	return 0;
+}
+
+
+
 void CVTWindow::OnControlOpenTEK()
 {
   OpenTEK();
@@ -2766,3 +3553,49 @@ void CVTWindow::OnHelpAbout()
   (*AboutDialog)(HVTWin);
   FreeTTDLG();
 }
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.11  2005/02/21 14:58:00  yutakakn
+ * LogMeIn -> LogMeTT へリネームにより、起動実行ファイル名も変更した。
+ *
+ * Revision 1.10  2005/02/03 14:36:16  yutakakn
+ * AKASI氏によるEterm風透過ウィンドウ機能を追加。
+ * VTColorの初期値は、teraterm.iniのANSI Colorを優先させた。
+ *
+ * Revision 1.9  2005/02/02 12:54:39  yutakakn
+ * ログ採取中に File -> log がグレイ表示にならない問題への対処。
+ *
+ * Revision 1.8  2005/01/29 16:13:42  yutakakn
+ * "Additional settings"の"Viewlog Editor"で、OKボタン押下時にテキストボックスから
+ * コピーしていなかったバグを修正。
+ *
+ * Revision 1.7  2005/01/29 05:27:35  yutakakn
+ * "View Log"メニューの追加。
+ * "Additional settings"にView Log Editorボックスを追加。
+ * teraterm.iniに"ViewlogEditor"エントリを追加。
+ *
+ * Revision 1.6  2005/01/22 06:44:34  yutakakn
+ * すべてのTeraTermへ同一コマンドを送信することができる 'Broadcast command' を
+ * Control menu配下に追加した。
+ * 'Additional settings'のフォントを tahoma(8) へ変更した。
+ *
+ * Revision 1.5  2005/01/15 13:29:29  yutakakn
+ * TeraTermウィンドウの最大化ボタンを有効にした。
+ * ただし、タイトルバーをダブルクリックしても最大化はしない。
+ * また、TEKには未対応。
+ *
+ * Revision 1.4  2004/12/07 14:27:21  yutakakn
+ * Additional settingsダイアログにフォーカスを当てるようにした。
+ * また、tab orderの調整。
+ *
+ * Revision 1.3  2004/12/07 13:39:54  yutakakn
+ * External SetupをSetupメニュー配下へ移動。
+ * LogMeInの起動メニューを追加。
+ * Duplication sessionメニューを追加。
+ *
+ * Revision 1.2  2004/12/03 15:52:55  yutakakn
+ * FileメニューにTeraTerm Menuの起動エントリを追加。
+ * また、アクセラレータキー(Alt+M)も追加した。
+ *
+ */

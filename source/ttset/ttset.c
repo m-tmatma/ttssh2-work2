@@ -241,31 +241,11 @@ void FAR PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
   GetNthNum(Temp,1,(int far *)(&ts->VTPos.x));
   GetNthNum(Temp,2,(int far *)(&ts->VTPos.y));
 
-  if ( (ts->VTPos.x < -20) || (ts->VTPos.y < -20) )
-  {
-    ts->VTPos.x = CW_USEDEFAULT;
-    ts->VTPos.y = CW_USEDEFAULT;
-  }
-  else {
-    if ( ts->VTPos.x < 0 ) ts->VTPos.x = 0;
-    if ( ts->VTPos.y < 0 ) ts->VTPos.y = 0;
-  }
-
   /* TEK win position */
   GetPrivateProfileString(Section,"TEKPos","-32768,-32768",
 			  Temp,sizeof(Temp),FName);  /* default: random position */
   GetNthNum(Temp,1,(int far *)&(ts->TEKPos.x));
   GetNthNum(Temp,2,(int far *)&(ts->TEKPos.y));
-
-  if ( (ts->TEKPos.x < -20) || (ts->TEKPos.y < -20) )
-  {
-    ts->TEKPos.x = CW_USEDEFAULT;
-    ts->TEKPos.y = CW_USEDEFAULT;
-  }
-  else {
-    if ( ts->TEKPos.x < 0 ) ts->TEKPos.x = 0;
-    if ( ts->TEKPos.y < 0 ) ts->TEKPos.y = 0;
-  }
 
   /* VT terminal size  */
   GetPrivateProfileString(Section,"TerminalSize","80,24",
@@ -973,6 +953,11 @@ void FAR PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 			  Temp,sizeof(Temp),FName);
   strncpy(ts->CygwinDirectory, Temp, sizeof(Temp));
 
+  // Viewlog Editor path
+  GetPrivateProfileString(Section,"ViewlogEditor ","notepad.exe",
+			  Temp,sizeof(Temp),FName);
+  strncpy(ts->ViewlogEditor, Temp, sizeof(Temp));
+
   // Locale for UTF-8
   GetPrivateProfileString(Section,"Locale ", DEFAULT_LOCALE,
 			  Temp,sizeof(Temp),FName);
@@ -1113,6 +1098,7 @@ void FAR PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
   _snprintf(Temp, sizeof(Temp), "%d", ts->AlphaBlend);
   WritePrivateProfileString(Section,"AlphaBlend", Temp, FName);
   WritePrivateProfileString(Section,"CygwinDirectory", ts->CygwinDirectory, FName);
+  WritePrivateProfileString(Section,"ViewlogEditor", ts->ViewlogEditor, FName);
   WritePrivateProfileString(Section,"Locale", ts->Locale, FName);
   _snprintf(Temp, sizeof(Temp), "%d", ts->CodePage);
   WritePrivateProfileString(Section,"CodePage", Temp, FName);
@@ -2254,7 +2240,11 @@ void FAR PASCAL ParseParam(PCHAR Param, PTTSet ts, PCHAR DDETopic)
     else if ( strnicmp(Temp,"/6", 2)==0 )
       ts->ProtocolFamily = AF_INET6;
 #endif
-    else if ( (Temp[0]!='/') && (strlen(Temp)>0) )
+	else if (strnicmp(Temp, "/DUPLICATE", 9) == 0 ) { // duplicate session (2004.12.7. yutaka)
+		ts->DuplicateSession = 1;
+
+	} 
+	else if ( (Temp[0]!='/') && (strlen(Temp)>0) )
     {
       if (JustAfterHost &&
 	  (sscanf(Temp,"%d",&c)==1))
@@ -2356,3 +2346,17 @@ int CALLBACK LibMain(HANDLE hInstance, WORD wDataSegment,
 }
 #endif
 
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.3  2005/01/08 15:20:15  yutakakn
+ * マルチディスプレイ環境において、ウィンドウのリサイズを行うとプライマリディスプレイへ
+ * 戻ってしまう現象への対処。
+ * ＃パッチを送っていただいた安藤氏に感謝
+ *
+ * Revision 1.2  2004/12/07 13:41:30  yutakakn
+ * External SetupをSetupメニュー配下へ移動。
+ * LogMeInの起動メニューを追加。
+ * Duplication sessionメニューを追加。
+ *
+ */
