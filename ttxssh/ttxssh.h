@@ -110,6 +110,8 @@ typedef struct _TS_SSH {
   int LocalForwardingIdentityCheck;
 
   int ssh_protocol_version; // SSH version (2004.10.11 yutaka)
+  int ssh_heartbeat_overtime; // SSH heartbeat(keepalive) (2004.12.11 yutaka)
+  int ssh2_keyboard_interactive; // SSH2 keyboard-interactive (2005.1.23 yutaka)
 } TS_SSH;
 
 typedef struct _TInstVar {
@@ -175,6 +177,8 @@ typedef struct _TInstVar {
   enum hostkey_type hostkey_type;
   SSHCipher ctos_cipher;
   SSHCipher stoc_cipher;
+  enum hmac_type ctos_hmac;
+  enum hmac_type stoc_hmac;
   int we_need;
   int key_done;
   int rekeying;
@@ -196,6 +200,14 @@ typedef struct _TInstVar {
   int kexgex_min;
   int kexgex_bits;
   int kexgex_max;
+  int ssh2_autologin;
+  SSHAuthMethod ssh2_authmethod;
+  char ssh2_username[MAX_PATH];
+  char ssh2_password[MAX_PATH];
+  char ssh2_keyfile[MAX_PATH];
+  time_t ssh_heartbeat_tick;
+  HANDLE ssh_heartbeat_thread;
+  int keyboard_interactive_done;
 
 } TInstVar;
 
@@ -218,3 +230,32 @@ void get_teraterm_dir_relative_name(char FAR * buf, int bufsize, char FAR * base
 int copy_teraterm_dir_relative_path(char FAR * dest, int destsize, char FAR * basename);
 
 #endif
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.6  2005/01/24 14:07:07  yutakakn
+ * ・keyboard-interactive認証をサポートした。
+ * 　それに伴い、teraterm.iniに "KeyboardInteractive" エントリを追加した。
+ * ・バージョンダイアログに OpenSSLバージョン を追加
+ *
+ * Revision 1.5  2004/12/27 14:05:08  yutakakn
+ * 'Auto window close'が有効の場合、切断後の接続ができない問題を修正した。
+ * 　・スレッドの終了待ち合わせ処理の追加
+ * 　・確保済みSSHリソースの解放
+ *
+ * Revision 1.4  2004/12/17 14:05:55  yutakakn
+ * パケット受信時のHMACチェックを追加。
+ * KEXにおけるHMACアルゴリズムチェックを追加。
+ *
+ * Revision 1.3  2004/12/11 07:31:00  yutakakn
+ * SSH heartbeatスレッドの追加した。これにより、IPマスカレード環境において、ルータの
+ * NATテーブルクリアにより、SSHコネクションが切断される現象が回避される。
+ * それに合わせて、teraterm.iniのTTSSHセクションに、HeartBeat エントリを追加。
+ *
+ * Revision 1.2  2004/12/01 15:37:49  yutakakn
+ * SSH2自動ログイン機能を追加。
+ * 現状、パスワード認証のみに対応。
+ * ・コマンドライン
+ *   /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+ *
+ */

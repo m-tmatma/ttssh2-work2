@@ -35,6 +35,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ttxssh.h"
 #include "fwdui.h"
 #include "util.h"
+#include "ssh.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -53,6 +54,8 @@ static char FAR *ProtocolFamilyList[] = { "UNSPEC", "IPv6", "IPv4", NULL };
 #else
 #include <winsock.h>
 #endif							/* INET6 */
+
+#include <openssl/opensslv.h>
 
 #define MATCH_STR(s, o) _strnicmp((s), (o), NUM_ELEM(o) - 1)
 
@@ -171,10 +174,14 @@ static void init_TTSSH(PTInstVar pvar)
 	HOSTS_init(pvar);
 	FWD_init(pvar);
 	FWDUI_init(pvar);
+
+	ssh_heartbeat_lock_initialize();
 }
 
 static void uninit_TTSSH(PTInstVar pvar)
 {
+	halt_ssh_heartbeat_thread(pvar);
+
 	SSH_end(pvar);
 	PKT_end(pvar);
 	AUTH_end(pvar);
@@ -193,6 +200,8 @@ static void uninit_TTSSH(PTInstVar pvar)
 					(LPARAM) pvar->OldSmallIcon);
 		pvar->OldSmallIcon = NULL;
 	}
+
+	ssh_heartbeat_lock_finalize();
 }
 
 static void PASCAL FAR TTXInit(PTTSet ts, PComVar cv)
@@ -362,7 +371,14 @@ static void read_ssh_options(PTInstVar pvar, PCHAR fileName)
 		read_BOOL_option(fileName, "LocalForwardingIdentityCheck", TRUE);
 
 	// SSH protocol version (2004.10.11 yutaka)
-	settings->ssh_protocol_version = GetPrivateProfileInt("TTSSH", "ProtocolVersion", 1, fileName);
+	// default is SSH2 (2004.11.30 yutaka)
+	settings->ssh_protocol_version = GetPrivateProfileInt("TTSSH", "ProtocolVersion", 2, fileName);
+
+	// SSH heartbeat time(second) (2004.12.11 yutaka)
+	settings->ssh_heartbeat_overtime = GetPrivateProfileInt("TTSSH", "HeartBeat", 60, fileName);
+
+	// SSH2 keyboard-interactive (2005.1.23 yutaka)
+	settings->ssh2_keyboard_interactive = GetPrivateProfileInt("TTSSH", "KeyboardInteractive", 1, fileName);
 
 	clear_local_settings(pvar);
 }
@@ -421,7 +437,17 @@ static void write_ssh_options(PTInstVar pvar, PCHAR fileName,
 		settings->ssh_protocol_version==2 ? "2" : "1",
 		fileName);
 
+	// SSH heartbeat time(second) (2004.12.11 yutaka)
+	_snprintf(buf, sizeof(buf), "%d", settings->ssh_heartbeat_overtime);
+	WritePrivateProfileString("TTSSH", "HeartBeat", buf, fileName);
+
+	// SSH2 keyboard-interactive (2005.1.23 yutaka)
+	WritePrivateProfileString("TTSSH", "KeyboardInteractive", 
+		settings->ssh2_keyboard_interactive ? "1" : "0", 
+		fileName);
+
 }
+
 
 /* find free port in all protocol family */
 static unsigned short find_local_port(PTInstVar pvar)
@@ -601,7 +627,13 @@ static int PASCAL FAR TTXrecv(SOCKET s, char FAR * buf, int len, int flags)
 	GET_VAR();
 
 	if (s == pvar->socket) {
-		return PKT_recv(pvar, buf, len);
+		int ret;
+
+		ssh_heartbeat_lock();
+		ret = PKT_recv(pvar, buf, len);
+		ssh_heartbeat_unlock();
+		return (ret);
+
 	} else {
 		return (pvar->Precv) (s, buf, len, flags);
 	}
@@ -613,7 +645,9 @@ static int PASCAL FAR TTXsend(SOCKET s, char const FAR * buf, int len,
 	GET_VAR();
 
 	if (s == pvar->socket) {
+		ssh_heartbeat_lock();
 		SSH_send(pvar, buf, len);
+		ssh_heartbeat_unlock();
 		return len;
 	} else {
 		return (pvar->Psend) (s, buf, len, flags);
@@ -647,12 +681,13 @@ void notify_established_secure_connection(PTInstVar pvar)
 
 void notify_closed_connection(PTInstVar pvar)
 {
-	PostMessage(pvar->NotificationWindow, WM_USER_COMMNOTIFY,
-				pvar->socket, MAKELPARAM(FD_CLOSE, 0));
-
 	SSH_notify_disconnecting(pvar, NULL);
 	AUTH_notify_disconnecting(pvar);
 	HOSTS_notify_disconnecting(pvar);
+
+	PostMessage(pvar->NotificationWindow, WM_USER_COMMNOTIFY,
+				pvar->socket, MAKELPARAM(FD_CLOSE, 0));
+
 }
 
 static void add_err_msg(PTInstVar pvar, char FAR * msg)
@@ -854,10 +889,10 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 		SendDlgItemMessage(dlg, IDC_SSH_VERSION, EM_LIMITTEXT,
 						   NUM_ELEM(ssh_version) - 1, 0);
 
-		if (pvar->settings.ssh_protocol_version == 2) {
-			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 1, 0); // SSH2
-		} else {
+		if (pvar->settings.ssh_protocol_version == 1) {
 			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 0, 0); // SSH1
+		} else {
+			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 1, 0); // SSH2
 		}
 
 		if (IsDlgButtonChecked(dlg, IDC_HOSTSSH)) {
@@ -902,12 +937,18 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 		// Host dialogにフォーカスをあてる (2004.10.2 yutaka)
 		{
 		HWND hwnd = GetDlgItem(dlg, IDC_HOSTNAME);
-		SetFocus(dlg);
+
 		SetFocus(hwnd);
-		//SendMessage(dlg, WM_COMMAND, IDC_HOSTTCPIP, 0);
+		//SendMessage(hwnd, BM_SETCHECK, BST_CHECKED, 0);
+		//style = GetClassLongPtr(hwnd, GCL_STYLE);
+		//SetClassLongPtr(hwnd, GCL_STYLE, style | WS_TABSTOP);
 		}
 
-		return TRUE;
+		// SetFocus()でフォーカスをあわせた場合、FALSEを返す必要がある。
+		// TRUEを返すと、TABSTOP対象の一番はじめのコントロールが選ばれる。
+		// (2004.11.23 yutaka)
+		return FALSE;
+		//return TRUE;
 
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
@@ -985,17 +1026,11 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 #endif							/* INET6 */
 			enable_dlg_items(dlg, IDC_HOSTCOMLABEL, IDC_HOSTCOM, FALSE);
 
+			enable_dlg_items(dlg, IDC_SSH_VERSION_LABEL, IDC_SSH_VERSION_LABEL, TRUE); // disabled (2004.11.23 yutaka)
 			if (IsDlgButtonChecked(dlg, IDC_HOSTSSH)) {
 				enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, TRUE);
 			} else {
 				enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, FALSE); // disabled
-			}
-
-			// Host dialogにフォーカスをあてる (2004.10.2 yutaka)
-			{
-			HWND hwnd = GetDlgItem(dlg, IDC_HOSTNAME);
-			SetFocus(dlg);
-			SetFocus(hwnd);
 			}
 
 			return TRUE;
@@ -1009,6 +1044,7 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 							 IDC_HOSTTCPPROTOCOL, FALSE);
 #endif							/* INET6 */
 			enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, FALSE); // disabled
+			enable_dlg_items(dlg, IDC_SSH_VERSION_LABEL, IDC_SSH_VERSION_LABEL, FALSE); // disabled (2004.11.23 yutaka)
 
 			return TRUE;
 
@@ -1091,6 +1127,31 @@ static void read_ssh_options_from_user_file(PTInstVar pvar,
 	FWDUI_load_settings(pvar);
 }
 
+
+// @をブランクに置換する。 (2005.1.26 yutaka)
+static void replace_to_blank(char *src, char *dst, int dst_len)
+{
+	int len, i;
+
+	len = strlen(src);
+	if (dst_len < len) // buffer overflow check
+		return;
+
+	for (i = 0 ; i < len ; i++) {
+		if (src[i] == '@') { // @ が登場したら
+			if (i < len - 1 && src[i + 1] == '@') { // その次も @ ならアットマークと認識する
+				*dst++ = '@';
+				i++;
+			} else {
+				*dst++ = ' '; // 空白に置き換える
+			}
+		} else {
+			*dst++ = src[i];
+		}
+	}
+	*dst = '\0';
+}
+
 /* returns 1 if the option text must be deleted */
 static int parse_option(PTInstVar pvar, char FAR * option)
 {
@@ -1114,6 +1175,7 @@ static int parse_option(PTInstVar pvar, char FAR * option)
 			} else if (stricmp(option + 4, "-autologin") == 0
 					   || stricmp(option + 4, "-autologon") == 0) {
 				pvar->settings.TryDefaultAuth = TRUE;
+
 			} else if (MATCH_STR(option + 4, "-consume=") == 0) {
 				read_ssh_options_from_user_file(pvar, option + 13);
 				DeleteFile(option + 13);
@@ -1152,6 +1214,44 @@ static int parse_option(PTInstVar pvar, char FAR * option)
 			// TERATERM.INI でSSHが有効になっている場合、うまくCygtermが起動しないことが
 			// あることへの対処。(2004.10.11 yutaka)
 			pvar->settings.Enabled = 0;
+
+		} else if (MATCH_STR(option + 1, "auth") == 0) {
+			// SSH2自動ログインオプションの追加 
+			//
+			// SYNOPSIS: /ssh /auth=passowrd /user=ユーザ名 /passwd=パスワード
+			//           /ssh /auth=publickey /user=ユーザ名 /passwd=パスワード /keyfile=パス
+			// EXAMPLE: /ssh /auth=password /user=nike /passwd=a@bc
+			//          /ssh /auth=publickey /user=foo /passwd=bar /keyfile=d:\tmp\id_rsa
+			// NOTICE: パスワードやパスに空白が含む場合は、ブランクの代わりに @ を使うこと。
+			//
+			// (2004.11.30 yutaka)
+			// (2005.1.26 yutaka) 空白対応。公開鍵認証サポート。
+			//
+			pvar->ssh2_autologin = 1; // for SSH2 (2004.11.30 yutaka)
+
+			if (MATCH_STR(option + 5, "=password") == 0) { // パスワード/keyboard-interactive認証
+				//pvar->auth_state.cur_cred.method = SSH_AUTH_PASSWORD;
+				pvar->ssh2_authmethod = SSH_AUTH_PASSWORD;
+
+			} else if (MATCH_STR(option + 5, "=publickey") == 0) { // 公開鍵認証
+				//pvar->auth_state.cur_cred.method = SSH_AUTH_RSA;
+				pvar->ssh2_authmethod = SSH_AUTH_RSA;
+
+			} else {
+				// TODO:
+
+			}
+
+		} else if (MATCH_STR(option + 1, "user=") == 0) {
+			replace_to_blank(option + 6, pvar->ssh2_username, sizeof(pvar->ssh2_username));
+			//_snprintf(pvar->ssh2_username, sizeof(pvar->ssh2_username), "%s", option + 6);
+
+		} else if (MATCH_STR(option + 1, "passwd=") == 0) {
+			replace_to_blank(option + 8, pvar->ssh2_password, sizeof(pvar->ssh2_password));
+			//_snprintf(pvar->ssh2_password, sizeof(pvar->ssh2_password), "%s", option + 8);
+
+		} else if (MATCH_STR(option + 1, "keyfile=") == 0) {
+			replace_to_blank(option + 9, pvar->ssh2_keyfile, sizeof(pvar->ssh2_keyfile));
 
 		}
 
@@ -1284,8 +1384,10 @@ static void init_about_dlg(PTInstVar pvar, HWND dlg)
 {
 	char buf[1024];
 
-	// TTSSHダイアログに表示するSSHに関する情報 (2004.10.30 yutaka)
+	// OpenSSLのバージョンを設定する (2005.1.24 yutaka)
+	SendMessage(GetDlgItem(dlg, IDC_OPENSSL_VERSION), WM_SETTEXT, 0, (LPARAM)OPENSSL_VERSION_TEXT);
 
+	// TTSSHダイアログに表示するSSHに関する情報 (2004.10.30 yutaka)
 	if (pvar->socket != INVALID_SOCKET) {
 		if (SSHv1(pvar)) {
 			SSH_get_server_ID_info(pvar, buf, sizeof(buf));
@@ -1325,6 +1427,22 @@ static void init_about_dlg(PTInstVar pvar, HWND dlg)
 				strcpy(buf, "ssh-rsa");
 			}
 			append_about_text(dlg, "Host Key: ", buf);
+
+			// add HMAC algorithm (2004.12.17 yutaka)
+			buf[0] = '\0';
+			if (pvar->ctos_hmac == HMAC_SHA1) {
+				strcat(buf, "hmac-sha1");
+			} else if (pvar->ctos_hmac == HMAC_MD5) {
+				strcat(buf, "hmac-md5");
+			}
+			strcat(buf, " to server, ");
+			if (pvar->stoc_hmac == HMAC_SHA1) {
+				strcat(buf, "hmac-sha1");
+			} else if (pvar->stoc_hmac == HMAC_MD5) {
+				strcat(buf, "hmac-md5");
+			}
+			strcat(buf, " from server");
+			append_about_text(dlg, "HMAC: ", buf);
 
 			CRYPT_get_cipher_info(pvar, buf, sizeof(buf));
 			append_about_text(dlg, "Encryption: ", buf);
@@ -1774,10 +1892,20 @@ static int PASCAL FAR TTXProcessCommand(HWND hWin, WORD cmd)
 
 			pvar->showing_err = TRUE;
 			pvar->err_msg = NULL;
+#if 1
+			// XXX: "SECURITY WARINIG" dialogで ESC キーを押下すると、
+			// なぜかアプリケーションエラーとなるため、下記APIは削除。(2004.12.16 yutaka)
+			if (!SSHv1(pvar)) {
+				MessageBox(NULL, msg, "TTSSH",
+						MB_TASKMODAL | MB_ICONEXCLAMATION);
+			}
+#else
 			MessageBox(NULL, msg, "TTSSH",
 					   MB_TASKMODAL | MB_ICONEXCLAMATION);
+#endif
 			free(msg);
 			pvar->showing_err = FALSE;
+
 			if (pvar->err_msg != NULL) {
 				PostMessage(hWin, WM_COMMAND, ID_SSHASYNCMESSAGEBOX, 0);
 			} else {
@@ -1971,3 +2099,44 @@ int CALLBACK LibMain(HANDLE hInstance, WORD wDataSegment,
 	return (1);
 }
 #endif
+
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.9  2005/01/24 14:07:07  yutakakn
+ * ・keyboard-interactive認証をサポートした。
+ * 　それに伴い、teraterm.iniに "KeyboardInteractive" エントリを追加した。
+ * ・バージョンダイアログに OpenSSLバージョン を追加
+ *
+ * Revision 1.8  2004/12/27 14:05:08  yutakakn
+ * 'Auto window close'が有効の場合、切断後の接続ができない問題を修正した。
+ * 　・スレッドの終了待ち合わせ処理の追加
+ * 　・確保済みSSHリソースの解放
+ *
+ * Revision 1.7  2004/12/17 14:28:36  yutakakn
+ * メッセージ認証アルゴリズムに HMAC-MD5 を追加。
+ * TTSSHバージョンダイアログにHMACアルゴリズム表示を追加。
+ *
+ * Revision 1.6  2004/12/16 13:57:43  yutakakn
+ * "SECURITY WARINIG" dialogで ESC キーを押下すると、
+ * アプリケーションエラーとなる現象への暫定対処。
+ *
+ * Revision 1.5  2004/12/11 07:31:00  yutakakn
+ * SSH heartbeatスレッドの追加した。これにより、IPマスカレード環境において、ルータの
+ * NATテーブルクリアにより、SSHコネクションが切断される現象が回避される。
+ * それに合わせて、teraterm.iniのTTSSHセクションに、HeartBeat エントリを追加。
+ *
+ * Revision 1.4  2004/12/01 15:37:49  yutakakn
+ * SSH2自動ログイン機能を追加。
+ * 現状、パスワード認証のみに対応。
+ * ・コマンドライン
+ *   /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+ *
+ * Revision 1.3  2004/11/29 15:52:37  yutakakn
+ * SSHのdefault protocolをSSH2にした。
+ *
+ * Revision 1.2  2004/11/23 14:32:26  yutakakn
+ * 接続ダイアログの起動時に、TCP/IPの「ホスト名」にフォーカスが当たるようにした。
+ *
+ *
+ */
