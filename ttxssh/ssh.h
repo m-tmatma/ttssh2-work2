@@ -178,6 +178,13 @@ enum hostkey_type {
 	KEY_UNSPEC,
 };
 
+// 下記のインデックスは ssh2_macs[] と合わせること。
+enum hmac_type {
+	HMAC_SHA1,
+	HMAC_MD5,
+	HMAC_UNKNOWN
+};
+
 #define KEX_DEFAULT_KEX     "diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1"
 
 #define	KEX_DEFAULT_PK_ALG	"ssh-rsa,ssh-dss"
@@ -370,5 +377,8 @@ int SSH_get_clear_MAC_size(PTInstVar pvar);
 void SSH2_send_kexinit(PTInstVar pvar);
 BOOL do_SSH2_userauth(PTInstVar pvar);
 void debug_print(int no, char *msg, int len);
+void ssh_heartbeat_lock_initialize(void);
+void ssh_heartbeat_lock(void);
+void ssh_heartbeat_unlock(void);
 
 #endif
