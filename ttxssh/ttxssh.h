@@ -110,6 +110,8 @@ typedef struct _TS_SSH {
   int LocalForwardingIdentityCheck;
 
   int ssh_protocol_version; // SSH version (2004.10.11 yutaka)
+  int ssh_heartbeat_overtime; // SSH heartbeat(keepalive) (2004.12.11 yutaka)
+  int ssh2_keyboard_interactive; // SSH2 keyboard-interactive (2005.1.23 yutaka)
 } TS_SSH;
 
 typedef struct _TInstVar {
@@ -175,6 +177,8 @@ typedef struct _TInstVar {
   enum hostkey_type hostkey_type;
   SSHCipher ctos_cipher;
   SSHCipher stoc_cipher;
+  enum hmac_type ctos_hmac;
+  enum hmac_type stoc_hmac;
   int we_need;
   int key_done;
   int rekeying;
@@ -183,19 +187,32 @@ typedef struct _TInstVar {
   Newkeys ssh2_keys[MODE_MAX];
   EVP_CIPHER_CTX evpcip[MODE_MAX];
   int userauth_success;
-  int remote_id;
+  int shell_id;
+  /*int remote_id;*/
   int session_nego_status;
+  /*
   unsigned int local_window;
   unsigned int local_window_max;
   unsigned int local_consumed;
   unsigned int local_maxpacket;
   unsigned int remote_window;
   unsigned int remote_maxpacket;
+  */
   int client_key_bits;
   int server_key_bits;
   int kexgex_min;
   int kexgex_bits;
   int kexgex_max;
+  int ssh2_autologin;
+  SSHAuthMethod ssh2_authmethod;
+  char ssh2_username[MAX_PATH];
+  char ssh2_password[MAX_PATH];
+  char ssh2_keyfile[MAX_PATH];
+  time_t ssh_heartbeat_tick;
+  HANDLE ssh_heartbeat_thread;
+  int keyboard_interactive_done;
+  int keyboard_interactive_password_input;
+  int userauth_retry_count;
 
 } TInstVar;
 
@@ -216,5 +233,50 @@ void notify_verbose_message(PTInstVar pvar, char FAR * msg, int level);
 
 void get_teraterm_dir_relative_name(char FAR * buf, int bufsize, char FAR * basename);
 int copy_teraterm_dir_relative_path(char FAR * dest, int destsize, char FAR * basename);
+void get_file_version(char *exefile, int *major, int *minor, int *release, int *build);
 
 #endif
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.10  2005/03/12 15:07:34  yutakakn
+ * SSH2 keyboard-interactive認証をTISダイアログに実装した。
+ *
+ * Revision 1.9  2005/03/10 13:40:39  yutakakn
+ * すでにログイン処理を行っている場合は、SSH2_MSG_SERVICE_REQUESTの送信は
+ * しないことにする。OpenSSHでは支障ないが、Tru64 UNIXではサーバエラーとなってしまうため。
+ *
+ * Revision 1.8  2005/03/03 13:28:23  yutakakn
+ * クライアントのSSHバージョンを ttxssh.dll から取得して、サーバへ送るようにした。
+ *
+ * Revision 1.7  2005/01/27 13:30:33  yutakakn
+ * 公開鍵認証自動ログインをサポート。
+ * /auth=publickey, /keyfile オプションを新規追加した。
+ * また、空白を含む引数をサポート。
+ *
+ * Revision 1.6  2005/01/24 14:07:07  yutakakn
+ * ・keyboard-interactive認証をサポートした。
+ * 　それに伴い、teraterm.iniに "KeyboardInteractive" エントリを追加した。
+ * ・バージョンダイアログに OpenSSLバージョン を追加
+ *
+ * Revision 1.5  2004/12/27 14:05:08  yutakakn
+ * 'Auto window close'が有効の場合、切断後の接続ができない問題を修正した。
+ * 　・スレッドの終了待ち合わせ処理の追加
+ * 　・確保済みSSHリソースの解放
+ *
+ * Revision 1.4  2004/12/17 14:05:55  yutakakn
+ * パケット受信時のHMACチェックを追加。
+ * KEXにおけるHMACアルゴリズムチェックを追加。
+ *
+ * Revision 1.3  2004/12/11 07:31:00  yutakakn
+ * SSH heartbeatスレッドの追加した。これにより、IPマスカレード環境において、ルータの
+ * NATテーブルクリアにより、SSHコネクションが切断される現象が回避される。
+ * それに合わせて、teraterm.iniのTTSSHセクションに、HeartBeat エントリを追加。
+ *
+ * Revision 1.2  2004/12/01 15:37:49  yutakakn
+ * SSH2自動ログイン機能を追加。
+ * 現状、パスワード認証のみに対応。
+ * ・コマンドライン
+ *   /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+ *
+ */
