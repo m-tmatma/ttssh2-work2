@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
-// Used by c:\usr\src\teraterm\source\teraterm\ttermpro.rc
+// Used by c:\usr\cvs\teraterm\source\teraterm\ttermpro.rc
 //
 #define IDI_TTERM                       100
 #define IDR_ACC                         100
@@ -9,6 +9,11 @@
 #define IDI_TEK                         102
 #define IDD_COMMENT_DIALOG              110
 #define IDD_EXTERNAL_SETUP              111
+#define IDD_TABSHEET_GENERAL            111
+#define IDD_BROADCAST_DIALOG            112
+#define IDD_ADDITIONAL_SETUPTAB         114
+#define IDD_TABSHEET_VISUAL             116
+#define IDD_TABSHEET_LOG                117
 #define IDR_TEKMENU                     1000
 #define IDC_EDIT_COMMENT                1000
 #define IDC_EDIT_FULLPATH               1001
@@ -24,6 +29,21 @@
 #define IDC_COLOR_GREEN                 1014
 #define IDC_COLOR_BLUE                  1015
 #define IDC_SAMPLE_COLOR                1016
+#define IDC_COMMAND_EDIT                1017
+#define IDC_ENTERKEY_CHECK              1018
+#define IDC_RADIO_CRLF                  1019
+#define IDC_RADIO_CR                    1020
+#define IDC_RADIO_LF                    1021
+#define IDC_ENTERGROUP                  1022
+#define IDC_VIEWLOG_LABEL               1023
+#define IDC_VIEWLOG_EDITOR              1024
+#define IDC_BUTTON1                     1025
+#define IDC_VIEWLOG_PATH                1025
+#define IDC_SETUP_TAB                   1028
+#define IDC_ETERM_LOOKFEEL              1030
+#define IDC_DISABLE_PASTE_RBUTTON       1032
+#define IDC_CHECK1                      1033
+#define IDC_CLICKABLE_URL               1033
 #define IDD_PRNABORTDLG                 2100
 #define IDD_FILETRANSDLG                2200
 #define IDC_TRANSFNAME                  2201
@@ -106,15 +126,21 @@
 #define ID_FILE_CYGWINCONNECTION        52001
 #define ID_FILE_COMMENTTOLOG            52004
 #define ID_EDIT_EXTERNALSETUP           52005
+#define ID_FILE_TERATERMMENU            52006
+#define ID_FILE_LOGMEIN                 52010
+#define ID_FILE_DUPLICATESESSION        52013
+#define ID_SETUP_ADDITIONALSETTINGS     52016
+#define ID_CONTROL_BROADCASTCOMMAND     52017
+#define ID_FILE_VIEWLOG                 52018
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
-#define _APS_NEXT_RESOURCE_VALUE        112
-#define _APS_NEXT_COMMAND_VALUE         52006
-#define _APS_NEXT_CONTROL_VALUE         1017
+#define _APS_NEXT_RESOURCE_VALUE        118
+#define _APS_NEXT_COMMAND_VALUE         52019
+#define _APS_NEXT_CONTROL_VALUE         1034
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

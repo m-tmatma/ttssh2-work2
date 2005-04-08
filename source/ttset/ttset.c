@@ -241,31 +241,11 @@ void FAR PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
   GetNthNum(Temp,1,(int far *)(&ts->VTPos.x));
   GetNthNum(Temp,2,(int far *)(&ts->VTPos.y));
 
-  if ( (ts->VTPos.x < -20) || (ts->VTPos.y < -20) )
-  {
-    ts->VTPos.x = CW_USEDEFAULT;
-    ts->VTPos.y = CW_USEDEFAULT;
-  }
-  else {
-    if ( ts->VTPos.x < 0 ) ts->VTPos.x = 0;
-    if ( ts->VTPos.y < 0 ) ts->VTPos.y = 0;
-  }
-
   /* TEK win position */
   GetPrivateProfileString(Section,"TEKPos","-32768,-32768",
 			  Temp,sizeof(Temp),FName);  /* default: random position */
   GetNthNum(Temp,1,(int far *)&(ts->TEKPos.x));
   GetNthNum(Temp,2,(int far *)&(ts->TEKPos.y));
-
-  if ( (ts->TEKPos.x < -20) || (ts->TEKPos.y < -20) )
-  {
-    ts->TEKPos.x = CW_USEDEFAULT;
-    ts->TEKPos.y = CW_USEDEFAULT;
-  }
-  else {
-    if ( ts->TEKPos.x < 0 ) ts->TEKPos.x = 0;
-    if ( ts->TEKPos.y < 0 ) ts->TEKPos.y = 0;
-  }
 
   /* VT terminal size  */
   GetPrivateProfileString(Section,"TerminalSize","80,24",
@@ -425,6 +405,20 @@ void FAR PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
 			      (BYTE)ts->TmpColor[0][i*3+1],
 			      (BYTE)ts->TmpColor[0][i*3+2]);
 
+  /* begin - ishizaki */
+  ts->EnableClickableUrl = GetOnOff(Section,"EnableClickableUrl",FName,FALSE);
+
+  /* URL Color */
+  GetPrivateProfileString(Section,"URLColor","0,255,0,255,255,255",
+			  Temp,sizeof(Temp),FName);
+  for (i = 0; i<=5; i++)
+    GetNthNum(Temp,i+1,(int far *)&(ts->TmpColor[0][i]));
+  for (i = 0; i<=1; i++)
+    ts->URLColor[i] = RGB((BYTE)ts->TmpColor[0][i*3],
+			  (BYTE)ts->TmpColor[0][i*3+1],
+			  (BYTE)ts->TmpColor[0][i*3+2]);
+  /* end - ishizaki */
+
   /* TEK Color */
   GetPrivateProfileString(Section,"TEKColor","0,0,0,255,255,255",
 			  Temp,sizeof(Temp),FName);
@@ -529,6 +523,10 @@ void FAR PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
     ts->VTBlinkColor[i] = GetNearestColor(TmpDC, ts->VTBlinkColor[i]);
   for (i = 0; i<=1; i++)
     ts->TEKColor[i] = GetNearestColor(TmpDC, ts->TEKColor[i]);
+  /* begin - ishizaki */
+  for (i = 0; i<=1; i++)
+    ts->URLColor[i] = GetNearestColor(TmpDC, ts->URLColor[i]);
+  /* end - ishizaki */
 #ifndef NO_ANSI_COLOR_EXTENSION
   for (i = 0; i<16; i++)
     ts->ANSIColor[i] = GetNearestColor(TmpDC, ts->ANSIColor[i]);
@@ -958,6 +956,9 @@ void FAR PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
     GetOnOff(Section,"EnableContinuedLineCopy",FName,FALSE);
 #endif /* NO_COPYLINE_FIX */
 
+  ts->DisablePasteMouseRButton =
+    GetOnOff(Section,"DisablePasteMouseRButton",FName,FALSE);
+
   // mouse cursor 
   GetPrivateProfileString(Section,"MouseCursor","IBEAM",
 			  Temp,sizeof(Temp),FName);
@@ -972,6 +973,11 @@ void FAR PASCAL ReadIniFile(PCHAR FName, PTTSet ts)
   GetPrivateProfileString(Section,"CygwinDirectory ","c:\\cygwin",
 			  Temp,sizeof(Temp),FName);
   strncpy(ts->CygwinDirectory, Temp, sizeof(Temp));
+
+  // Viewlog Editor path
+  GetPrivateProfileString(Section,"ViewlogEditor ","notepad.exe",
+			  Temp,sizeof(Temp),FName);
+  strncpy(ts->ViewlogEditor, Temp, sizeof(Temp));
 
   // Locale for UTF-8
   GetPrivateProfileString(Section,"Locale ", DEFAULT_LOCALE,
@@ -1108,11 +1114,13 @@ void FAR PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
   WritePrivateProfileString(Section,"KanjiOut",Temp,FName);
 
   // new configuration
+  WriteOnOff(Section, "DisablePasteMouseRButton", FName, ts->DisablePasteMouseRButton);
   WriteOnOff(Section, "EnableContinuedLineCopy", FName, ts->EnableContinuedLineCopy);
   WritePrivateProfileString(Section,"MouseCursor", ts->MouseCursorName, FName);
   _snprintf(Temp, sizeof(Temp), "%d", ts->AlphaBlend);
   WritePrivateProfileString(Section,"AlphaBlend", Temp, FName);
   WritePrivateProfileString(Section,"CygwinDirectory", ts->CygwinDirectory, FName);
+  WritePrivateProfileString(Section,"ViewlogEditor", ts->ViewlogEditor, FName);
   WritePrivateProfileString(Section,"Locale", ts->Locale, FName);
   _snprintf(Temp, sizeof(Temp), "%d", ts->CodePage);
   WritePrivateProfileString(Section,"CodePage", Temp, FName);
@@ -1212,6 +1220,21 @@ void FAR PASCAL WriteIniFile(PCHAR FName, PTTSet ts)
   WriteInt6(Section,"VTBlinkColor",FName,
     ts->TmpColor[0][0], ts->TmpColor[0][1], ts->TmpColor[0][2],
     ts->TmpColor[0][3], ts->TmpColor[0][4], ts->TmpColor[0][5]);
+
+  /* start - ishizaki */
+  WriteOnOff(Section, "EnableClickableUrl", FName, ts->EnableClickableUrl);
+
+  /* URL color */
+  for (i = 0;i<=1;i++)
+  {
+    ts->TmpColor[0][i*3]   = GetRValue(ts->URLColor[i]);
+    ts->TmpColor[0][i*3+1] = GetGValue(ts->URLColor[i]);
+    ts->TmpColor[0][i*3+2] = GetBValue(ts->URLColor[i]);
+  }
+  WriteInt6(Section,"URLColor",FName,
+    ts->TmpColor[0][0], ts->TmpColor[0][1], ts->TmpColor[0][2],
+    ts->TmpColor[0][3], ts->TmpColor[0][4], ts->TmpColor[0][5]);
+  /* end - ishizaki */
 
   /* TEK Color */
   for (i = 0;i<=1;i++)
@@ -2254,7 +2277,11 @@ void FAR PASCAL ParseParam(PCHAR Param, PTTSet ts, PCHAR DDETopic)
     else if ( strnicmp(Temp,"/6", 2)==0 )
       ts->ProtocolFamily = AF_INET6;
 #endif
-    else if ( (Temp[0]!='/') && (strlen(Temp)>0) )
+	else if (strnicmp(Temp, "/DUPLICATE", 9) == 0 ) { // duplicate session (2004.12.7. yutaka)
+		ts->DuplicateSession = 1;
+
+	} 
+	else if ( (Temp[0]!='/') && (strlen(Temp)>0) )
     {
       if (JustAfterHost &&
 	  (sscanf(Temp,"%d",&c)==1))
@@ -2356,3 +2383,26 @@ int CALLBACK LibMain(HANDLE hInstance, WORD wDataSegment,
 }
 #endif
 
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.5  2005/03/16 14:10:39  yutakakn
+ * マウス右ボタン押下でのペーストを制御する設定項目を追加。
+ * teraterm.iniに DisablePasteMouseRButton エントリを追加。
+ *
+ * Revision 1.4  2005/01/29 05:27:35  yutakakn
+ * "View Log"メニューの追加。
+ * "Additional settings"にView Log Editorボックスを追加。
+ * teraterm.iniに"ViewlogEditor"エントリを追加。
+ *
+ * Revision 1.3  2005/01/08 15:20:15  yutakakn
+ * マルチディスプレイ環境において、ウィンドウのリサイズを行うとプライマリディスプレイへ
+ * 戻ってしまう現象への対処。
+ * ＃パッチを送っていただいた安藤氏に感謝
+ *
+ * Revision 1.2  2004/12/07 13:41:30  yutakakn
+ * External SetupをSetupメニュー配下へ移動。
+ * LogMeInの起動メニューを追加。
+ * Duplication sessionメニューを追加。
+ *
+ */
