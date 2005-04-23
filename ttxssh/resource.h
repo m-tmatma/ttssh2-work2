@@ -9,6 +9,7 @@
 #define IDD_ABOUTDIALOG                 101
 #define IDD_SSHSETUP                    102
 #define IDD_SSHUNKNOWNHOST              103
+#define IDD_SSHKEYGEN                   104
 #define IDD_SSHAUTH                     106
 #define IDD_HOSTDLG                     600
 #define IDC_HOSTTCPIP                   601
@@ -63,6 +64,24 @@
 #define IDC_COMBO1                      1049
 #define IDC_SSH_VERSION                 1049
 #define IDC_SSH_VERSION_LABEL           1050
+#define IDC_OPENSSL_VERSION             1051
+#define IDC_HEARTBEATLABEL              1052
+#define IDC_HEARTBEAT_EDIT              1053
+#define IDC_HEARTBEATLABEL2             1054
+#define IDC_CHECK1                      1055
+#define IDC_KEYBOARD_INTERACTIVE_CHECK  1055
+#define IDC_TTSSH_VERSION               1056
+#define IDC_RSA1_TYPE                   1057
+#define IDC_RSA_TYPE                    1058
+#define IDC_DSA_TYPE                    1059
+#define IDC_KEYTYPE                     1060
+#define IDC_KEY_LABEL                   1061
+#define IDC_CONFIRM_LABEL               1062
+#define IDC_KEY_EDIT                    1063
+#define IDC_CONFIRM_EDIT                1064
+#define IDC_SAVE_PUBLIC_KEY             1065
+#define IDC_SAVE_PRIBATE_KEY            1066
+#define IDC_SAVE_PRIVATE_KEY            1066
 #define IDC_LOCALUSERNAMELABEL          1100
 #define IDC_LOCALUSERNAME               1101
 #define IDC_CHOOSEHOSTRSAFILE           1102
@@ -77,9 +96,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        104
+#define _APS_NEXT_RESOURCE_VALUE        105
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1051
+#define _APS_NEXT_CONTROL_VALUE         1067
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif
