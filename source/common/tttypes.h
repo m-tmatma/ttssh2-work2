@@ -42,6 +42,9 @@
 #ifndef NO_COPYLINE_FIX
 #define AttrLineContinued 0x20 /* valid only at the beggining or end of a line */
 #endif /* NO_COPYLINE_FIX */
+/* begin - ishizaki */
+#define AttrURL 0x40
+/* end - ishizaki */
 #define AttrKanji 0x80
   /* Color attribute bit masks */
 #define Attr2Fore 0x08
@@ -167,6 +170,17 @@
 #define PF_CONFIRMDISCONN 1
 #define PF_BEEPONCONNECT  2
 
+// Eterm lookfeel alphablend structure
+typedef struct {
+	int BGEnable;
+	int BGUseAlphaBlendAPI;
+	char BGSPIPath[MAX_PATH];
+	int BGFastSizeMove;
+	int BGNoCopyBits;
+	int BGNoFrame;
+	char BGThemeFile[MAX_PATH];
+} eterm_lookfeel_t;
+
 /* TTTSet */
 //
 // NOTE: â∫ãLÇÃÉGÉâÅ[Ç™Ç≈ÇÈÇ±Ç∆Ç™Ç†ÇÈ
@@ -248,7 +262,10 @@ struct tttset {
 /*------ WinSet --------*/
   WORD VTFlag;
   HFONT SampleFont;
-  WORD TmpColor[3][6];
+  /* begin - ishizaki */
+  /* WORD TmpColor[3][6]; */
+  WORD TmpColor[4][6];
+  /* end - ishizaki */
   /* Tera Term window setup variables */
   char Title[50];
   WORD TitleFormat;
@@ -263,6 +280,9 @@ struct tttset {
   WORD TEKColorEmu;
   COLORREF VTColor[2];
   COLORREF TEKColor[2];
+/* begin - ishizaki */
+  COLORREF URLColor[2];
+/* end   - ishizaki */
   COLORREF VTBoldColor[2];
   COLORREF VTBlinkColor[2];
   WORD Beep;
@@ -309,11 +329,17 @@ struct tttset {
 #endif /* INET6 */
   char MouseCursorName[16];
   int AlphaBlend;
-  char CygwinDirectory[MAXPATHLEN];
+  char CygwinDirectory[MAX_PATH];
 #define DEFAULT_LOCALE "japanese"
   char Locale[80];
 #define DEFAULT_CODEPAGE 932
   int CodePage;
+  int DuplicateSession;
+  char ViewlogEditor[MAX_PATH];
+  WORD LogTypePlainText;
+  int DisablePasteMouseRButton;
+  int EnableClickableUrl;
+  eterm_lookfeel_t EtermLookfeel;
 };
 
 typedef struct tttset TTTSet, *PTTSet;
