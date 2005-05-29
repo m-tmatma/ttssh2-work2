@@ -835,6 +835,7 @@ void RunMacro(PCHAR FName, BOOL Startup)
 	char Cmnd[MAXPATHLEN+40];
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
+	DWORD pri = NORMAL_PRIORITY_CLASS;
 
 	SetTopic();
 	if (! InitDDE()) return;
@@ -864,6 +865,16 @@ void RunMacro(PCHAR FName, BOOL Startup)
 #else
 	// TeraTerm本体でログ採取中にマクロを実行すると、マクロの動作が停止することが
 	// あるため、プロセスの優先度を1つ下げて実行させる。(2004/9/5 yutaka)
+	// ログ採取中のみに下げる。(2004/11/28 yutaka)
+	if (FileLog || BinLog) {
+		pri = BELOW_NORMAL_PRIORITY_CLASS;
+	}
+	// 暫定処置として、常に下げることにする。(2005/5/15 yutaka)
+	// マクロによるtelnet自動ログインが失敗することがあるので、下げないことにする。(2005/5/23 yutaka)
+#if 0
+	pri = BELOW_NORMAL_PRIORITY_CLASS;
+#endif
+
 	ZeroMemory(&si, sizeof(si));
 	ZeroMemory(&pi, sizeof(pi));
 	GetStartupInfo(&si);
@@ -875,10 +886,20 @@ void RunMacro(PCHAR FName, BOOL Startup)
 		NULL, 
 		NULL,
 		FALSE,
-		BELOW_NORMAL_PRIORITY_CLASS,
+		pri,
 		NULL, NULL,
 		&si, &pi) == 0) {
 			EndDDE();
 	}
 #endif
 }
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.3  2005/05/15 09:23:19  yutakakn
+ * 暫定処置として ttermpro.exe のプロセス優先度は常に下げることにした。
+ *
+ * Revision 1.2  2004/11/28 13:57:30  yutakakn
+ * TeraTerm本体からのマクロ実行において、ログ採取時のみにプロセス優先度を下げるようにした。
+ *
+ */
