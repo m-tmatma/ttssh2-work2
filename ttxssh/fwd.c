@@ -35,6 +35,8 @@ See LICENSE.TXT for the license.
 
 #include "x11util.h"
 
+#include "fwd.h"
+
 #include <assert.h>
 #ifdef INET6
 #include "WSAAsyncGetAddrInfo.h"
@@ -255,7 +257,7 @@ static void send_local_connection_closure(PTInstVar pvar, int channel_num)
 
 	if ((channel->status & (FWD_REMOTE_CONNECTED | FWD_LOCAL_CONNECTED))
 		== (FWD_REMOTE_CONNECTED | FWD_LOCAL_CONNECTED)) {
-		SSH_channel_input_eof(pvar, channel->remote_num);
+		SSH_channel_input_eof(pvar, channel->remote_num, channel_num);
 		SSH_channel_output_eof(pvar, channel->remote_num);
 		channel->status |= FWD_CLOSED_LOCAL_IN | FWD_CLOSED_LOCAL_OUT;
 	}
@@ -755,6 +757,7 @@ static void accept_local_connection(PTInstVar pvar, int request_num)
 #ifdef INET6
 	struct sockaddr_storage addr;
 	char hname[NI_MAXHOST];
+	char strport[NI_MAXSERV]; // ws2tcpip.h
 #else
 	struct sockaddr addr;
 #endif							/* INET6 */
@@ -813,9 +816,10 @@ static void accept_local_connection(PTInstVar pvar, int request_num)
 #endif							/* INET6 */
 
 #ifdef INET6
+	// SSH2 port-forwardingに接続元のリモートポートが必要。(2005.2.27 yutaka)
 	if (getnameinfo
 		((struct sockaddr FAR *) &addr, addrlen, hname, sizeof(hname),
-		 NULL, 0, NI_NUMERICHOST)) {
+		 strport, sizeof(strport), NI_NUMERICHOST | NI_NUMERICSERV)) {
 		/* NOT REACHED */
 	}
 	_snprintf(buf, sizeof(buf),
@@ -845,8 +849,9 @@ static void accept_local_connection(PTInstVar pvar, int request_num)
 	channel->filter_closure = NULL;
 	channel->filter = NULL;
 
+	// add originator-port (2005.2.27 yutaka)
 	SSH_open_channel(pvar, channel_num, request->spec.to_host,
-					 request->spec.to_port, buf);
+					 request->spec.to_port, buf, atoi(strport));
 }
 
 static void write_local_connection_buffer(PTInstVar pvar, int channel_num)
@@ -889,7 +894,8 @@ static void read_local_connection(PTInstVar pvar, int channel_num)
 
 			if (amount > 0
 				&& (channel->status & FWD_CLOSED_REMOTE_OUT) == 0) {
-				SSH_channel_send(pvar, channel->remote_num, new_buf,
+				// ポートフォワーディングにおいてクライアントからの送信要求を、SSH通信に乗せてサーバまで送り届ける。
+				SSH_channel_send(pvar, channel_num, channel->remote_num, new_buf,
 								 amount);
 			}
 
@@ -1305,9 +1311,11 @@ static BOOL interactive_init_request(PTInstVar pvar, int request_num,
 		}
 		if (s == INVALID_SOCKET) {
 			if (report_error) {
-				notify_nonfatal_error(pvar,
-									  "Some socket(s) required for port forwarding could not be initialized.\n"
-									  "Some port forwarding services may not be available.");
+				char buf[256];
+				_snprintf(buf, sizeof(buf), "Some socket(s) required for port forwarding could not be initialized.\n"
+											"Some port forwarding services may not be available.\n"
+											"(errno %d)", WSAGetLastError());
+				notify_nonfatal_error(pvar,buf);
 			}
 			freeaddrinfo(res0);
 			/* free(request->listening_sockets); /* DO NOT FREE HERE, listening_sockets'll be freed in FWD_end */
@@ -1647,7 +1655,9 @@ void FWD_enter_interactive_mode(PTInstVar pvar)
 
 static void create_local_channel(PTInstVar pvar, uint32 remote_channel_num,
 								 int request_num, void *filter_closure,
-								 FWDFilter filter)
+								 FWDFilter filter,
+								 int *chan_num
+								 )
 {
 	char buf[1024];
 	int channel_num;
@@ -1720,6 +1730,11 @@ static void create_local_channel(PTInstVar pvar, uint32 remote_channel_num,
 	channel->filter_closure = filter_closure;
 	channel->filter = filter;
 
+	// save channel number (2005.7.2 yutaka)
+	if (chan_num != NULL) {
+		*chan_num = channel_num;
+	}
+
 #ifdef INET6
 	if (request->to_host_addrs != NULL) {
 		make_local_connection(pvar, channel_num);
@@ -1733,7 +1748,8 @@ static void create_local_channel(PTInstVar pvar, uint32 remote_channel_num,
 
 void FWD_open(PTInstVar pvar, uint32 remote_channel_num,
 			  char FAR * local_hostname, int local_port,
-			  char FAR * originator, int originator_len)
+			  char FAR * originator, int originator_len,
+			  int *chan_num)
 {
 	int i;
 	char buf[1024];
@@ -1741,12 +1757,25 @@ void FWD_open(PTInstVar pvar, uint32 remote_channel_num,
 	for (i = 0; i < pvar->fwd_state.num_requests; i++) {
 		FWDRequest FAR *request = pvar->fwd_state.requests + i;
 
-		if ((request->status & FWD_DELETED) == 0
-			&& request->spec.type == FWD_REMOTE_TO_LOCAL
-			&& request->spec.to_port == local_port
-			&& strcmp(request->spec.to_host, local_hostname) == 0) {
-			create_local_channel(pvar, remote_channel_num, i, NULL, NULL);
-			return;
+		if (SSHv1(pvar)) {
+			if ((request->status & FWD_DELETED) == 0
+				&& request->spec.type == FWD_REMOTE_TO_LOCAL
+				&& request->spec.to_port == local_port
+				&& strcmp(request->spec.to_host, local_hostname) == 0) {
+				create_local_channel(pvar, remote_channel_num, i, NULL, NULL, chan_num);
+				return;
+			}
+
+		} else { // SSH2
+			if ((request->status & FWD_DELETED) == 0
+				&& request->spec.type == FWD_REMOTE_TO_LOCAL
+				&& request->spec.from_port == local_port
+				//&& strcmp(request->spec.to_host, local_hostname) == 0) {
+				) {
+				create_local_channel(pvar, remote_channel_num, i, NULL, NULL, 
+					chan_num);
+				return;
+			}
 		}
 	}
 
@@ -1776,7 +1805,8 @@ void FWD_open(PTInstVar pvar, uint32 remote_channel_num,
 }
 
 void FWD_X11_open(PTInstVar pvar, uint32 remote_channel_num,
-				  char FAR * originator, int originator_len)
+				  char FAR * originator, int originator_len,
+				  int *chan_num)
 {
 	int i;
 
@@ -1790,7 +1820,8 @@ void FWD_X11_open(PTInstVar pvar, uint32 remote_channel_num,
 															pvar->
 															fwd_state.
 															X11_auth_data),
-								 X11_unspoofing_filter);
+								 X11_unspoofing_filter,
+								 chan_num);
 			return;
 		}
 	}
@@ -1832,7 +1863,7 @@ void FWD_confirmed_open(PTInstVar pvar, uint32 local_channel_num,
 
 		read_local_connection(pvar, local_channel_num);
 	} else {
-		SSH_channel_input_eof(pvar, remote_channel_num);
+		SSH_channel_input_eof(pvar, remote_channel_num, local_channel_num);
 		SSH_channel_output_eof(pvar, remote_channel_num);
 		channel->status |= FWD_CLOSED_LOCAL_IN | FWD_CLOSED_LOCAL_OUT;
 	}
@@ -1970,3 +2001,27 @@ void FWD_end(PTInstVar pvar)
 		DestroyWindow(pvar->fwd_state.accept_wnd);
 	}
 }
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.7  2005/07/03 12:07:53  yutakakn
+ * SSH2 X Window Systemのport forwardingをサポートした。
+ *
+ * Revision 1.6  2005/07/02 07:56:13  yutakakn
+ * update SSH2 port-forwading(remote to local)
+ *
+ * Revision 1.5  2005/06/26 14:26:24  yutakakn
+ * update: SSH2 port-forwarding (remote to local)
+ *
+ * Revision 1.4  2005/06/19 09:17:47  yutakakn
+ * SSH2 port-fowarding(local to remote)をサポートした。
+ *
+ * Revision 1.3  2005/04/03 14:39:48  yutakakn
+ * SSH2 channel lookup機構の追加（ポートフォワーディングのため）。
+ * TTSSH 2.10で追加したlog dump機構において、DH鍵再作成時にbuffer freeで
+ * アプリケーションが落ちてしまうバグを修正。
+ *
+ * Revision 1.2  2004/12/19 15:39:26  yutakakn
+ * CVS LogIDの追加
+ *
+ */
