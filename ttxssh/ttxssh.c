@@ -35,6 +35,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "ttxssh.h"
 #include "fwdui.h"
 #include "util.h"
+#include "ssh.h"
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -53,6 +54,25 @@ static char FAR *ProtocolFamilyList[] = { "UNSPEC", "IPv6", "IPv4", NULL };
 #else
 #include <winsock.h>
 #endif							/* INET6 */
+
+#include <Lmcons.h>
+
+// include OpenSSL header file
+#include <openssl/opensslv.h>
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
+#include <openssl/dsa.h>
+#include <openssl/bn.h>
+#include <openssl/pem.h>
+#include <openssl/rand.h>
+#include <openssl/rc4.h>
+#include <openssl/md5.h>
+
+// include ZLib header file
+#include <zlib.h>
+
+#include "buffer.h"
+#include "cipher.h"
 
 #define MATCH_STR(s, o) _strnicmp((s), (o), NUM_ELEM(o) - 1)
 
@@ -171,10 +191,16 @@ static void init_TTSSH(PTInstVar pvar)
 	HOSTS_init(pvar);
 	FWD_init(pvar);
 	FWDUI_init(pvar);
+
+	ssh_heartbeat_lock_initialize();
 }
 
 static void uninit_TTSSH(PTInstVar pvar)
 {
+	halt_ssh_heartbeat_thread(pvar);
+
+	ssh2_channel_free();
+
 	SSH_end(pvar);
 	PKT_end(pvar);
 	AUTH_end(pvar);
@@ -193,6 +219,8 @@ static void uninit_TTSSH(PTInstVar pvar)
 					(LPARAM) pvar->OldSmallIcon);
 		pvar->OldSmallIcon = NULL;
 	}
+
+	ssh_heartbeat_lock_finalize();
 }
 
 static void PASCAL FAR TTXInit(PTTSet ts, PComVar cv)
@@ -300,7 +328,6 @@ static void read_string_option(PCHAR fileName, char FAR * keyName,
 
 static void read_ssh_options(PTInstVar pvar, PCHAR fileName)
 {
-	extern void SSH2_update_cipher_myproposal(PTInstVar pvar);
 	char buf[1024];
 	TS_SSH FAR *settings = pvar->ts_SSH;
 
@@ -326,6 +353,7 @@ static void read_ssh_options(PTInstVar pvar, PCHAR fileName)
 	READ_STD_STRING_OPTION(CipherOrder);
 	normalize_cipher_order(settings->CipherOrder);
 	SSH2_update_cipher_myproposal(pvar); // yutaka
+	SSH2_update_compression_myproposal(pvar);  // SSH2 packet compression (2005.7.9 yutaka)
 
 	read_string_option(fileName, "KnownHostsFiles", "ssh_known_hosts",
 					   settings->KnownHostsFiles,
@@ -337,6 +365,7 @@ static void read_ssh_options(PTInstVar pvar, PCHAR fileName)
 	settings->DefaultAuthMethod = atoi(buf);
 	if (settings->DefaultAuthMethod != SSH_AUTH_PASSWORD
 		&& settings->DefaultAuthMethod != SSH_AUTH_RSA
+		&& settings->DefaultAuthMethod != SSH_AUTH_TIS  // add (2005.3.12 yutaka)
 		&& settings->DefaultAuthMethod != SSH_AUTH_RHOSTS) {
 		/* this default can never be SSH_AUTH_RHOSTS_RSA because that is not a
 		   selection in the dialog box; SSH_AUTH_RHOSTS_RSA is automatically chosen
@@ -362,7 +391,16 @@ static void read_ssh_options(PTInstVar pvar, PCHAR fileName)
 		read_BOOL_option(fileName, "LocalForwardingIdentityCheck", TRUE);
 
 	// SSH protocol version (2004.10.11 yutaka)
-	settings->ssh_protocol_version = GetPrivateProfileInt("TTSSH", "ProtocolVersion", 1, fileName);
+	// default is SSH2 (2004.11.30 yutaka)
+	settings->ssh_protocol_version = GetPrivateProfileInt("TTSSH", "ProtocolVersion", 2, fileName);
+
+	// SSH heartbeat time(second) (2004.12.11 yutaka)
+	settings->ssh_heartbeat_overtime = GetPrivateProfileInt("TTSSH", "HeartBeat", 60, fileName);
+
+	// SSH2 keyboard-interactive (2005.1.23 yutaka)
+	// デフォルトでは無効とする。OpenSSH 4.0ではkeyboard-interactiveメソッドが定義されていない場合に、
+	// 当該メソッドを使うとコネクションが切られてしまう。(2005.3.12 yutaka)
+	settings->ssh2_keyboard_interactive = GetPrivateProfileInt("TTSSH", "KeyboardInteractive", 0, fileName);
 
 	clear_local_settings(pvar);
 }
@@ -421,7 +459,17 @@ static void write_ssh_options(PTInstVar pvar, PCHAR fileName,
 		settings->ssh_protocol_version==2 ? "2" : "1",
 		fileName);
 
+	// SSH heartbeat time(second) (2004.12.11 yutaka)
+	_snprintf(buf, sizeof(buf), "%d", settings->ssh_heartbeat_overtime);
+	WritePrivateProfileString("TTSSH", "HeartBeat", buf, fileName);
+
+	// SSH2 keyboard-interactive (2005.1.23 yutaka)
+	WritePrivateProfileString("TTSSH", "KeyboardInteractive", 
+		settings->ssh2_keyboard_interactive ? "1" : "0", 
+		fileName);
+
 }
+
 
 /* find free port in all protocol family */
 static unsigned short find_local_port(PTInstVar pvar)
@@ -601,7 +649,13 @@ static int PASCAL FAR TTXrecv(SOCKET s, char FAR * buf, int len, int flags)
 	GET_VAR();
 
 	if (s == pvar->socket) {
-		return PKT_recv(pvar, buf, len);
+		int ret;
+
+		ssh_heartbeat_lock();
+		ret = PKT_recv(pvar, buf, len);
+		ssh_heartbeat_unlock();
+		return (ret);
+
 	} else {
 		return (pvar->Precv) (s, buf, len, flags);
 	}
@@ -613,7 +667,9 @@ static int PASCAL FAR TTXsend(SOCKET s, char const FAR * buf, int len,
 	GET_VAR();
 
 	if (s == pvar->socket) {
+		ssh_heartbeat_lock();
 		SSH_send(pvar, buf, len);
+		ssh_heartbeat_unlock();
 		return len;
 	} else {
 		return (pvar->Psend) (s, buf, len, flags);
@@ -647,12 +703,13 @@ void notify_established_secure_connection(PTInstVar pvar)
 
 void notify_closed_connection(PTInstVar pvar)
 {
-	PostMessage(pvar->NotificationWindow, WM_USER_COMMNOTIFY,
-				pvar->socket, MAKELPARAM(FD_CLOSE, 0));
-
 	SSH_notify_disconnecting(pvar, NULL);
 	AUTH_notify_disconnecting(pvar);
 	HOSTS_notify_disconnecting(pvar);
+
+	PostMessage(pvar->NotificationWindow, WM_USER_COMMNOTIFY,
+				pvar->socket, MAKELPARAM(FD_CLOSE, 0));
+
 }
 
 static void add_err_msg(PTInstVar pvar, char FAR * msg)
@@ -726,7 +783,7 @@ static void PASCAL FAR TTXOpenTCP(TTXSockHooks FAR * hooks)
 	GET_VAR();
 
 	if (pvar->settings.Enabled) {
-		char buf[1024] = "\nInitiating SSH session at ";
+		char buf[1024] = "\n---------------------------------------------------------------------\nInitiating SSH session at ";
 		struct tm FAR *newtime;
 		time_t long_time;
 
@@ -854,10 +911,10 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 		SendDlgItemMessage(dlg, IDC_SSH_VERSION, EM_LIMITTEXT,
 						   NUM_ELEM(ssh_version) - 1, 0);
 
-		if (pvar->settings.ssh_protocol_version == 2) {
-			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 1, 0); // SSH2
-		} else {
+		if (pvar->settings.ssh_protocol_version == 1) {
 			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 0, 0); // SSH1
+		} else {
+			SendDlgItemMessage(dlg, IDC_SSH_VERSION, CB_SETCURSEL, 1, 0); // SSH2
 		}
 
 		if (IsDlgButtonChecked(dlg, IDC_HOSTSSH)) {
@@ -884,14 +941,21 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 		else					/* All com ports are already used */
 			GetHNRec->PortType = IdTCPIP;
 
-		if (GetHNRec->PortType == IdTCPIP)
+		if (GetHNRec->PortType == IdTCPIP) {
 			enable_dlg_items(dlg, IDC_HOSTCOMLABEL, IDC_HOSTCOM, FALSE);
+
+			enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, TRUE); 
+			enable_dlg_items(dlg, IDC_SSH_VERSION_LABEL, IDC_SSH_VERSION_LABEL, TRUE); 
+		}
 #ifdef INET6
 		else {
 			enable_dlg_items(dlg, IDC_HOSTNAMELABEL, IDC_HOSTTCPPORT,
 							 FALSE);
 			enable_dlg_items(dlg, IDC_HOSTTCPPROTOCOLLABEL,
 							 IDC_HOSTTCPPROTOCOL, FALSE);
+
+			enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, FALSE); // disabled
+			enable_dlg_items(dlg, IDC_SSH_VERSION_LABEL, IDC_SSH_VERSION_LABEL, FALSE); // disabled (2004.11.23 yutaka)
 		}
 #else
 		else
@@ -900,14 +964,19 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 #endif							/* INET6 */
 
 		// Host dialogにフォーカスをあてる (2004.10.2 yutaka)
-		{
-		HWND hwnd = GetDlgItem(dlg, IDC_HOSTNAME);
-		SetFocus(dlg);
-		SetFocus(hwnd);
-		//SendMessage(dlg, WM_COMMAND, IDC_HOSTTCPIP, 0);
+		if (GetHNRec->PortType == IdTCPIP) {
+			HWND hwnd = GetDlgItem(dlg, IDC_HOSTNAME);
+			SetFocus(hwnd);
+		} else {
+			HWND hwnd = GetDlgItem(dlg, IDC_HOSTCOM);
+			SetFocus(hwnd);
 		}
 
-		return TRUE;
+		// SetFocus()でフォーカスをあわせた場合、FALSEを返す必要がある。
+		// TRUEを返すと、TABSTOP対象の一番はじめのコントロールが選ばれる。
+		// (2004.11.23 yutaka)
+		return FALSE;
+		//return TRUE;
 
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
@@ -985,17 +1054,11 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 #endif							/* INET6 */
 			enable_dlg_items(dlg, IDC_HOSTCOMLABEL, IDC_HOSTCOM, FALSE);
 
+			enable_dlg_items(dlg, IDC_SSH_VERSION_LABEL, IDC_SSH_VERSION_LABEL, TRUE); // disabled (2004.11.23 yutaka)
 			if (IsDlgButtonChecked(dlg, IDC_HOSTSSH)) {
 				enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, TRUE);
 			} else {
 				enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, FALSE); // disabled
-			}
-
-			// Host dialogにフォーカスをあてる (2004.10.2 yutaka)
-			{
-			HWND hwnd = GetDlgItem(dlg, IDC_HOSTNAME);
-			SetFocus(dlg);
-			SetFocus(hwnd);
 			}
 
 			return TRUE;
@@ -1009,6 +1072,7 @@ static BOOL CALLBACK TTXHostDlg(HWND dlg, UINT msg, WPARAM wParam,
 							 IDC_HOSTTCPPROTOCOL, FALSE);
 #endif							/* INET6 */
 			enable_dlg_items(dlg, IDC_SSH_VERSION, IDC_SSH_VERSION, FALSE); // disabled
+			enable_dlg_items(dlg, IDC_SSH_VERSION_LABEL, IDC_SSH_VERSION_LABEL, FALSE); // disabled (2004.11.23 yutaka)
 
 			return TRUE;
 
@@ -1091,6 +1155,31 @@ static void read_ssh_options_from_user_file(PTInstVar pvar,
 	FWDUI_load_settings(pvar);
 }
 
+
+// @をブランクに置換する。 (2005.1.26 yutaka)
+static void replace_to_blank(char *src, char *dst, int dst_len)
+{
+	int len, i;
+
+	len = strlen(src);
+	if (dst_len < len) // buffer overflow check
+		return;
+
+	for (i = 0 ; i < len ; i++) {
+		if (src[i] == '@') { // @ が登場したら
+			if (i < len - 1 && src[i + 1] == '@') { // その次も @ ならアットマークと認識する
+				*dst++ = '@';
+				i++;
+			} else {
+				*dst++ = ' '; // 空白に置き換える
+			}
+		} else {
+			*dst++ = src[i];
+		}
+	}
+	*dst = '\0';
+}
+
 /* returns 1 if the option text must be deleted */
 static int parse_option(PTInstVar pvar, char FAR * option)
 {
@@ -1114,6 +1203,7 @@ static int parse_option(PTInstVar pvar, char FAR * option)
 			} else if (stricmp(option + 4, "-autologin") == 0
 					   || stricmp(option + 4, "-autologon") == 0) {
 				pvar->settings.TryDefaultAuth = TRUE;
+
 			} else if (MATCH_STR(option + 4, "-consume=") == 0) {
 				read_ssh_options_from_user_file(pvar, option + 13);
 				DeleteFile(option + 13);
@@ -1152,6 +1242,44 @@ static int parse_option(PTInstVar pvar, char FAR * option)
 			// TERATERM.INI でSSHが有効になっている場合、うまくCygtermが起動しないことが
 			// あることへの対処。(2004.10.11 yutaka)
 			pvar->settings.Enabled = 0;
+
+		} else if (MATCH_STR(option + 1, "auth") == 0) {
+			// SSH2自動ログインオプションの追加 
+			//
+			// SYNOPSIS: /ssh /auth=passowrd /user=ユーザ名 /passwd=パスワード
+			//           /ssh /auth=publickey /user=ユーザ名 /passwd=パスワード /keyfile=パス
+			// EXAMPLE: /ssh /auth=password /user=nike /passwd=a@bc
+			//          /ssh /auth=publickey /user=foo /passwd=bar /keyfile=d:\tmp\id_rsa
+			// NOTICE: パスワードやパスに空白が含む場合は、ブランクの代わりに @ を使うこと。
+			//
+			// (2004.11.30 yutaka)
+			// (2005.1.26 yutaka) 空白対応。公開鍵認証サポート。
+			//
+			pvar->ssh2_autologin = 1; // for SSH2 (2004.11.30 yutaka)
+
+			if (MATCH_STR(option + 5, "=password") == 0) { // パスワード/keyboard-interactive認証
+				//pvar->auth_state.cur_cred.method = SSH_AUTH_PASSWORD;
+				pvar->ssh2_authmethod = SSH_AUTH_PASSWORD;
+
+			} else if (MATCH_STR(option + 5, "=publickey") == 0) { // 公開鍵認証
+				//pvar->auth_state.cur_cred.method = SSH_AUTH_RSA;
+				pvar->ssh2_authmethod = SSH_AUTH_RSA;
+
+			} else {
+				// TODO:
+
+			}
+
+		} else if (MATCH_STR(option + 1, "user=") == 0) {
+			replace_to_blank(option + 6, pvar->ssh2_username, sizeof(pvar->ssh2_username));
+			//_snprintf(pvar->ssh2_username, sizeof(pvar->ssh2_username), "%s", option + 6);
+
+		} else if (MATCH_STR(option + 1, "passwd=") == 0) {
+			replace_to_blank(option + 8, pvar->ssh2_password, sizeof(pvar->ssh2_password));
+			//_snprintf(pvar->ssh2_password, sizeof(pvar->ssh2_password), "%s", option + 8);
+
+		} else if (MATCH_STR(option + 1, "keyfile=") == 0) {
+			replace_to_blank(option + 9, pvar->ssh2_keyfile, sizeof(pvar->ssh2_keyfile));
 
 		}
 
@@ -1269,6 +1397,9 @@ static void PASCAL FAR TTXModifyMenu(HMENU menu)
 	/* inserts before ID_SETUP_TCPIP */
 	insertMenuBeforeItem(menu, 50360, MF_ENABLED, ID_SSHFWDSETUPMENU,
 						 "SSH F&orwarding...");
+
+	insertMenuBeforeItem(menu, 50360, MF_ENABLED, ID_SSHKEYGENMENU,
+						 "SSH KeyGenerator...");
 }
 
 static void append_about_text(HWND dlg, char FAR * prefix, char FAR * msg)
@@ -1280,12 +1411,93 @@ static void append_about_text(HWND dlg, char FAR * prefix, char FAR * msg)
 					   (LPARAM) (char FAR *) "\r\n");
 }
 
+// 実行ファイルからバージョン情報を得る (2005.2.28 yutaka)
+void get_file_version(char *exefile, int *major, int *minor, int *release, int *build)
+{
+	typedef struct {
+		WORD wLanguage;
+		WORD wCodePage;
+	} LANGANDCODEPAGE, *LPLANGANDCODEPAGE;
+	LPLANGANDCODEPAGE lplgcode;
+	UINT unLen;
+	DWORD size;
+	char *buf = NULL;
+	BOOL ret;
+	int i;
+	char fmt[80];
+	char *pbuf;
+
+	size = GetFileVersionInfoSize(exefile, NULL);
+	if (size == 0) {
+		goto error;
+	}
+	buf = malloc(size);
+	ZeroMemory(buf, size);
+
+	if (GetFileVersionInfo(exefile, 0, size, buf) == FALSE) {
+		goto error;
+	}
+
+	ret = VerQueryValue(buf,
+			"\\VarFileInfo\\Translation", 
+			(LPVOID *)&lplgcode, &unLen);
+	if (ret == FALSE)
+		goto error;
+
+	for (i = 0 ; i < (int)(unLen / sizeof(LANGANDCODEPAGE)) ; i++) {
+		_snprintf(fmt, sizeof(fmt), "\\StringFileInfo\\%04x%04x\\FileVersion", 
+			lplgcode[i].wLanguage, lplgcode[i].wCodePage);
+		VerQueryValue(buf, fmt, &pbuf, &unLen);
+		if (unLen > 0) { // get success
+			int n, a, b, c, d;
+
+			n = sscanf(pbuf, "%d, %d, %d, %d", &a, &b, &c, &d);
+			if (n == 4) { // convert success
+				*major = a;
+				*minor = b;
+				*release = c;
+				*build = d;
+				break;
+			}
+		}
+	}
+
+	free(buf);
+	return;
+
+error:
+	free(buf);
+	*major = *minor = *release = *build = 0;
+}
+
 static void init_about_dlg(PTInstVar pvar, HWND dlg)
 {
 	char buf[1024];
+	int a, b, c, d;
+
+	// TTSSHのバージョンを設定する (2005.2.28 yutaka)
+	get_file_version("ttxssh.dll", &a, &b, &c, &d);
+	_snprintf(buf, sizeof(buf), "TTSSH\r\nTeraterm Secure Shell extension, %d.%d", a, b);
+	SendMessage(GetDlgItem(dlg, IDC_TTSSH_VERSION), WM_SETTEXT, 0, (LPARAM)buf);
+
+	// OpenSSLのバージョンを設定する (2005.1.24 yutaka)
+	// 条件文追加 (2005.5.11 yutaka)
+#ifdef OPENSSL_VERSION_TEXT
+	SendMessage(GetDlgItem(dlg, IDC_OPENSSL_VERSION), WM_SETTEXT, 0, (LPARAM)OPENSSL_VERSION_TEXT);
+#else
+	SendMessage(GetDlgItem(dlg, IDC_OPENSSL_VERSION), WM_SETTEXT, 0, (LPARAM)"Unknown");
+#endif
+
+	// zlibのバージョンを設定する (2005.5.11 yutaka)
+#ifdef ZLIB_VERSION
+	_snprintf(buf, sizeof(buf), "ZLib %s", ZLIB_VERSION);
+#else
+	_snprintf(buf, sizeof(buf), "ZLib Unknown");
+#endif
+	SendMessage(GetDlgItem(dlg, IDC_ZLIB_VERSION), WM_SETTEXT, 0, (LPARAM)buf);
+
 
 	// TTSSHダイアログに表示するSSHに関する情報 (2004.10.30 yutaka)
-
 	if (pvar->socket != INVALID_SOCKET) {
 		if (SSHv1(pvar)) {
 			SSH_get_server_ID_info(pvar, buf, sizeof(buf));
@@ -1325,6 +1537,22 @@ static void init_about_dlg(PTInstVar pvar, HWND dlg)
 				strcpy(buf, "ssh-rsa");
 			}
 			append_about_text(dlg, "Host Key: ", buf);
+
+			// add HMAC algorithm (2004.12.17 yutaka)
+			buf[0] = '\0';
+			if (pvar->ctos_hmac == HMAC_SHA1) {
+				strcat(buf, "hmac-sha1");
+			} else if (pvar->ctos_hmac == HMAC_MD5) {
+				strcat(buf, "hmac-md5");
+			}
+			strcat(buf, " to server, ");
+			if (pvar->stoc_hmac == HMAC_SHA1) {
+				strcat(buf, "hmac-sha1");
+			} else if (pvar->stoc_hmac == HMAC_MD5) {
+				strcat(buf, "hmac-md5");
+			}
+			strcat(buf, " from server");
+			append_about_text(dlg, "HMAC: ", buf);
 
 			CRYPT_get_cipher_info(pvar, buf, sizeof(buf));
 			append_about_text(dlg, "Encryption: ", buf);
@@ -1443,6 +1671,14 @@ static void init_setup_dlg(PTInstVar pvar, HWND dlg)
 		SetDlgItemText(dlg, IDC_READWRITEFILENAME,
 					   pvar->settings.KnownHostsFiles);
 	}
+
+	// SSH2 HeartBeat(keep-alive)を追加 (2005.2.22 yutaka)
+	{
+		char buf[10];
+		_snprintf(buf, sizeof(buf), "%d", pvar->settings.ssh_heartbeat_overtime);
+		SetDlgItemText(dlg, IDC_HEARTBEAT_EDIT, buf);
+	}
+
 }
 
 void get_teraterm_dir_relative_name(char FAR * buf, int bufsize,
@@ -1580,6 +1816,14 @@ static void complete_setup_dlg(PTInstVar pvar, HWND dlg)
 											   KnownHostsFiles) - j,
 										buf + bufindex);
 	}
+
+	// get SSH HeartBeat(keep-alive)
+	SendMessage(GetDlgItem(dlg, IDC_HEARTBEAT_EDIT), WM_GETTEXT, sizeof(buf), (LPARAM)buf);
+	i = atoi(buf);
+	if (i < 0)
+		i = 60;
+	pvar->settings.ssh_heartbeat_overtime = i;
+
 }
 
 static void move_cur_sel_delta(HWND listbox, int delta)
@@ -1720,6 +1964,781 @@ static BOOL CALLBACK TTXSetupDlg(HWND dlg, UINT msg, WPARAM wParam,
 	return FALSE;
 }
 
+
+//
+// SSH key generator dialog (2005.4.10 yutaka)
+//
+
+typedef struct {
+	RSA *rsa;
+	DSA *dsa;
+} ssh_private_key_t;
+
+static ssh_private_key_t private_key = {NULL, NULL};
+
+typedef struct {
+	RSA *rsa;
+	DSA *dsa;
+} ssh_public_key_t;
+
+static ssh_public_key_t public_key = {NULL, NULL};;
+
+static void free_ssh_key(void)
+{
+	// DSA_free(), RSA_free()にNULLを渡しても問題はなし。
+	DSA_free(private_key.dsa);
+	private_key.dsa = NULL;
+	DSA_free(public_key.dsa);
+	public_key.dsa = NULL;
+
+	RSA_free(private_key.rsa);
+	private_key.rsa = NULL;
+	RSA_free(public_key.rsa);
+	public_key.rsa = NULL;
+}
+
+
+static BOOL generate_ssh_key(enum hostkey_type type)
+{
+	int bits = 1024;
+
+	// if SSH key already is generated, should free the resource.
+	free_ssh_key();
+
+	if (type == KEY_RSA1 || type == KEY_RSA) {
+		RSA *priv = NULL;
+		RSA *pub = NULL;
+
+		// private key
+		priv =  RSA_generate_key(bits, 35, NULL, NULL);
+		if (priv == NULL)
+			goto error;
+		private_key.rsa = priv;
+
+		// public key
+		pub = RSA_new();
+		pub->n = BN_new();
+		pub->e = BN_new();
+		if (pub->n == NULL || pub->e == NULL) {
+			RSA_free(pub);
+			goto error;
+		}
+
+		BN_copy(pub->n, priv->n);
+		BN_copy(pub->e, priv->e);
+		public_key.rsa = pub;
+
+	} else if (type == KEY_DSA) {
+		DSA *priv = NULL;
+		DSA *pub = NULL;
+
+		// private key
+		priv = DSA_generate_parameters(bits, NULL, 0, NULL, NULL, NULL, NULL);
+		if (priv == NULL)
+			goto error;
+		if (!DSA_generate_key(priv)) {
+			// TODO: free 'priv'?
+			goto error;
+		}
+		private_key.dsa = priv;
+
+		// public key
+		pub = DSA_new();
+		if (pub == NULL)
+			goto error;
+		pub->p = BN_new();
+		pub->q = BN_new();
+		pub->g = BN_new();
+		pub->pub_key = BN_new();
+		if (pub->p == NULL || pub->q == NULL || pub->g == NULL || pub->pub_key == NULL) {
+			DSA_free(pub);
+			goto error;
+		}
+
+		BN_copy(pub->p, priv->p);
+		BN_copy(pub->q, priv->q);
+		BN_copy(pub->g, priv->g);
+		BN_copy(pub->pub_key, priv->pub_key);
+		public_key.dsa = pub;
+
+	} else {
+		goto error;
+	}
+
+	return TRUE;
+
+error:
+	free_ssh_key();
+	return FALSE;
+}
+
+
+//
+// RC4 
+//
+
+/* Size of key to use */
+#define SEED_SIZE 20
+
+/* Number of bytes to reseed after */
+#define REKEY_BYTES (1 << 24)
+
+static int rc4_ready = 0;
+static RC4_KEY rc4;
+
+static void seed_rng(void)
+{
+    if (RAND_status() != 1)
+		return;
+}
+
+static void arc4random_stir(void)
+{
+    unsigned char rand_buf[SEED_SIZE];
+    int i;
+
+    memset(&rc4, 0, sizeof(rc4));
+	if (RAND_bytes(rand_buf, sizeof(rand_buf)) <= 0) {
+        //fatal("Couldn't obtain random bytes (error %ld)",
+        //    ERR_get_error());
+	}
+    RC4_set_key(&rc4, sizeof(rand_buf), rand_buf);
+
+    /*
+     * Discard early keystream, as per recommendations in:
+     * http://www.wisdom.weizmann.ac.il/~itsik/RC4/Papers/Rc4_ksa.ps
+     */
+    for(i = 0; i <= 256; i += sizeof(rand_buf))
+        RC4(&rc4, sizeof(rand_buf), rand_buf, rand_buf);
+
+    memset(rand_buf, 0, sizeof(rand_buf));
+
+    rc4_ready = REKEY_BYTES;
+}
+
+static unsigned int arc4random(void)
+{
+    unsigned int r = 0;
+    static int first_time = 1;
+
+    if (rc4_ready <= 0) {
+		if (first_time) {
+            seed_rng();
+		}
+        first_time = 0;
+        arc4random_stir();
+    }
+
+    RC4(&rc4, sizeof(r), (unsigned char *)&r, (unsigned char *)&r);
+
+    rc4_ready -= sizeof(r);
+
+    return(r);
+}
+
+//
+// SSH1 3DES
+//
+/*
+ * This is used by SSH1:
+ *
+ * What kind of triple DES are these 2 routines?
+ *
+ * Why is there a redundant initialization vector?
+ *
+ * If only iv3 was used, then, this would till effect have been
+ * outer-cbc. However, there is also a private iv1 == iv2 which
+ * perhaps makes differential analysis easier. On the other hand, the
+ * private iv1 probably makes the CRC-32 attack ineffective. This is a
+ * result of that there is no longer any known iv1 to use when
+ * choosing the X block.
+ */
+struct ssh1_3des_ctx
+{
+        EVP_CIPHER_CTX  k1, k2, k3;
+};
+
+static int ssh1_3des_init(EVP_CIPHER_CTX *ctx, const u_char *key, const u_char *iv, int enc)
+{
+	struct ssh1_3des_ctx *c;
+	u_char *k1, *k2, *k3;
+
+	if ((c = EVP_CIPHER_CTX_get_app_data(ctx)) == NULL) {
+		c = malloc(sizeof(*c));
+		EVP_CIPHER_CTX_set_app_data(ctx, c);
+	}
+	if (key == NULL)
+		return (1);
+	if (enc == -1)
+		enc = ctx->encrypt;
+	k1 = k2 = k3 = (u_char *) key;
+	k2 += 8;
+	if (EVP_CIPHER_CTX_key_length(ctx) >= 16+8) {
+		if (enc)
+			k3 += 16;
+		else
+			k1 += 16;
+	}
+	EVP_CIPHER_CTX_init(&c->k1);
+	EVP_CIPHER_CTX_init(&c->k2);
+	EVP_CIPHER_CTX_init(&c->k3);
+	if (EVP_CipherInit(&c->k1, EVP_des_cbc(), k1, NULL, enc) == 0 ||
+		EVP_CipherInit(&c->k2, EVP_des_cbc(), k2, NULL, !enc) == 0 ||
+		EVP_CipherInit(&c->k3, EVP_des_cbc(), k3, NULL, enc) == 0) {
+			memset(c, 0, sizeof(*c));
+			free(c);
+			EVP_CIPHER_CTX_set_app_data(ctx, NULL);
+			return (0);
+	}
+	return (1);
+}
+
+static int ssh1_3des_cbc(EVP_CIPHER_CTX *ctx, u_char *dest, const u_char *src, u_int len)
+{
+	struct ssh1_3des_ctx *c;
+
+	if ((c = EVP_CIPHER_CTX_get_app_data(ctx)) == NULL) {
+		//error("ssh1_3des_cbc: no context");
+		return (0);
+	}
+	if (EVP_Cipher(&c->k1, dest, (u_char *)src, len) == 0 ||
+		EVP_Cipher(&c->k2, dest, dest, len) == 0 ||
+		EVP_Cipher(&c->k3, dest, dest, len) == 0)
+		return (0);
+	return (1);
+}
+
+static int ssh1_3des_cleanup(EVP_CIPHER_CTX *ctx)
+{
+	struct ssh1_3des_ctx *c;
+
+	if ((c = EVP_CIPHER_CTX_get_app_data(ctx)) != NULL) {
+		EVP_CIPHER_CTX_cleanup(&c->k1);
+		EVP_CIPHER_CTX_cleanup(&c->k2);
+		EVP_CIPHER_CTX_cleanup(&c->k3);
+		memset(c, 0, sizeof(*c));
+		free(c);
+		EVP_CIPHER_CTX_set_app_data(ctx, NULL);
+	}
+	return (1);
+}
+
+void ssh1_3des_iv(EVP_CIPHER_CTX *evp, int doset, u_char *iv, int len)
+{
+	struct ssh1_3des_ctx *c;
+
+	if (len != 24)
+		//fatal("%s: bad 3des iv length: %d", __func__, len);
+		;
+
+	if ((c = EVP_CIPHER_CTX_get_app_data(evp)) == NULL)
+		//fatal("%s: no 3des context", __func__);
+		;
+
+	if (doset) {
+		//debug3("%s: Installed 3DES IV", __func__);
+		memcpy(c->k1.iv, iv, 8);
+		memcpy(c->k2.iv, iv + 8, 8);
+		memcpy(c->k3.iv, iv + 16, 8);
+	} else {
+		//debug3("%s: Copying 3DES IV", __func__);
+		memcpy(iv, c->k1.iv, 8);
+		memcpy(iv + 8, c->k2.iv, 8);
+		memcpy(iv + 16, c->k3.iv, 8);
+	}
+}
+
+const EVP_CIPHER *evp_ssh1_3des(void)
+{
+	static EVP_CIPHER ssh1_3des;
+
+	memset(&ssh1_3des, 0, sizeof(EVP_CIPHER));
+	ssh1_3des.nid = NID_undef;
+	ssh1_3des.block_size = 8;
+	ssh1_3des.iv_len = 0;
+	ssh1_3des.key_len = 16;
+	ssh1_3des.init = ssh1_3des_init;
+	ssh1_3des.cleanup = ssh1_3des_cleanup;
+	ssh1_3des.do_cipher = ssh1_3des_cbc;
+	ssh1_3des.flags = EVP_CIPH_CBC_MODE | EVP_CIPH_VARIABLE_LENGTH;
+	return (&ssh1_3des);
+}
+
+static void ssh_make_comment(char *comment, int maxlen)
+{
+	char user[UNLEN + 1], host[128];
+	DWORD dwSize;
+	WSADATA wsaData;
+	int ret;
+
+	// get Windows logon user name
+	dwSize = sizeof(user);
+	if (GetUserName(user, &dwSize) == 0) {
+		strcpy(user, "yutaka");
+	}
+
+	// get local hostname (by WinSock)
+	ret = WSAStartup(MAKEWORD(2,2), &wsaData);
+	if (ret == 0) {
+		if (gethostname(host, sizeof(host)) != 0) {
+			ret = WSAGetLastError();
+		}
+		WSACleanup();
+	}
+	if (ret != 0) {
+		strcpy(host, "sai");
+	}
+
+	_snprintf(comment, maxlen, "%s@%s", user, host);
+}
+
+// uuencode (rfc1521)
+static int uuencode(unsigned char *src, int srclen, unsigned char *target, int targsize)
+{
+	char base64[] ="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	char pad = '=';
+    int datalength = 0;
+    unsigned char input[3];
+    unsigned char output[4];
+    int i;
+
+    while (srclen > 2) {
+        input[0] = *src++;
+        input[1] = *src++;
+        input[2] = *src++;
+        srclen -= 3;
+
+        output[0] = input[0] >> 2;
+        output[1] = ((input[0] & 0x03) << 4) + (input[1] >> 4);
+        output[2] = ((input[1] & 0x0f) << 2) + (input[2] >> 6);
+        output[3] = input[2] & 0x3f;
+		if (output[0] >= 64 || 
+			output[1] >= 64 ||
+			output[2] >= 64 ||
+			output[3] >= 64)
+			return -1;
+
+        if (datalength + 4 > targsize)
+            return (-1);
+        target[datalength++] = base64[output[0]];
+        target[datalength++] = base64[output[1]];
+        target[datalength++] = base64[output[2]];
+        target[datalength++] = base64[output[3]];
+    }
+
+    if (srclen != 0) {
+        /* Get what's left. */
+        input[0] = input[1] = input[2] = '\0';
+        for (i = 0; i < srclen; i++)
+            input[i] = *src++;
+
+        output[0] = input[0] >> 2;
+        output[1] = ((input[0] & 0x03) << 4) + (input[1] >> 4);
+        output[2] = ((input[1] & 0x0f) << 2) + (input[2] >> 6);
+		if (output[0] >= 64 || 
+			output[1] >= 64 ||
+			output[2] >= 64)
+			return -1;
+
+        if (datalength + 4 > targsize)
+            return (-1);
+        target[datalength++] = base64[output[0]];
+        target[datalength++] = base64[output[1]];
+        if (srclen == 1)
+            target[datalength++] = pad;
+        else
+            target[datalength++] = base64[output[2]];
+        target[datalength++] = pad;
+    }
+    if (datalength >= targsize)
+        return (-1);
+    target[datalength] = '\0';  /* Returned value doesn't count \0. */
+
+	return (datalength); // success
+}
+
+static BOOL CALLBACK TTXKeyGenerator(HWND dlg, UINT msg, WPARAM wParam,
+								 LPARAM lParam)
+{
+	static enum hostkey_type key_type;
+
+	switch (msg) {
+	case WM_INITDIALOG: 
+		{
+		// default key type
+		SendMessage(GetDlgItem(dlg, IDC_RSA_TYPE), BM_SETCHECK, BST_CHECKED, 0);
+		key_type = KEY_RSA;
+
+		// passphrase edit box disabled(default)
+		EnableWindow(GetDlgItem(dlg, IDC_KEY_EDIT), FALSE);
+		EnableWindow(GetDlgItem(dlg, IDC_CONFIRM_EDIT), FALSE);
+
+		// file saving dialog disabled(default)
+		EnableWindow(GetDlgItem(dlg, IDC_SAVE_PUBLIC_KEY), FALSE);
+		EnableWindow(GetDlgItem(dlg, IDC_SAVE_PRIBATE_KEY), FALSE);
+
+		}
+		return TRUE;
+
+	case WM_COMMAND:
+		switch (LOWORD(wParam)) {
+		case IDOK: // key generate button pressed
+			// passphrase edit box disabled(default)
+			EnableWindow(GetDlgItem(dlg, IDC_KEY_EDIT), FALSE);
+			EnableWindow(GetDlgItem(dlg, IDC_CONFIRM_EDIT), FALSE);
+
+			// file saving dialog disabled(default)
+			EnableWindow(GetDlgItem(dlg, IDC_SAVE_PUBLIC_KEY), FALSE);
+			EnableWindow(GetDlgItem(dlg, IDC_SAVE_PRIBATE_KEY), FALSE);
+
+			if (generate_ssh_key(key_type)) {
+				// passphrase edit box disabled(default)
+				EnableWindow(GetDlgItem(dlg, IDC_KEY_EDIT), TRUE);
+				EnableWindow(GetDlgItem(dlg, IDC_CONFIRM_EDIT), TRUE);
+
+				// file saving dialog disabled(default)
+				EnableWindow(GetDlgItem(dlg, IDC_SAVE_PUBLIC_KEY), TRUE);
+				EnableWindow(GetDlgItem(dlg, IDC_SAVE_PRIBATE_KEY), TRUE);
+			}
+			return TRUE;
+
+		case IDCANCEL:			
+			// don't forget to free SSH resource!
+			free_ssh_key();
+			EndDialog(dlg, 0); // dialog close
+			return TRUE;
+
+		// if radio button pressed...
+		case IDC_RSA1_TYPE | (BN_CLICKED << 16):
+			key_type = KEY_RSA1;
+			break;
+
+		case IDC_RSA_TYPE | (BN_CLICKED << 16):
+			key_type = KEY_RSA;
+			break;
+
+		case IDC_DSA_TYPE | (BN_CLICKED << 16):
+			key_type = KEY_DSA;
+			break;
+
+		// saving public key file
+		case IDC_SAVE_PUBLIC_KEY:
+			{
+			int ret;
+			OPENFILENAME ofn;
+			char filename[MAX_PATH];
+			FILE *fp;
+			char comment[1024]; // comment string in private key
+
+			arc4random_stir();
+
+			// saving file dialog
+			ZeroMemory(&ofn, sizeof(ofn));
+			ofn.lStructSize = sizeof(ofn);
+			ofn.hwndOwner = dlg;
+			if (key_type == KEY_RSA1) {
+				ofn.lpstrFilter = "SSH1 RSA key(identity.pub)\0identity.pub\0All Files(*.*)\0*.*\0\0";
+				_snprintf(filename, sizeof(filename), "identity.pub");
+			} else if (key_type == KEY_RSA) {
+				ofn.lpstrFilter = "SSH2 RSA key(id_rsa.pub)\0id_rsa.pub\0All Files(*.*)\0*.*\0\0";
+				_snprintf(filename, sizeof(filename), "id_rsa.pub");
+			} else {
+				ofn.lpstrFilter = "SSH2 DSA key(id_dsa.pub)\0id_dsa.pub\0All Files(*.*)\0*.*\0\0";
+				_snprintf(filename, sizeof(filename), "id_dsa.pub");
+			}
+			ofn.lpstrFile = filename;
+			ofn.nMaxFile = sizeof(filename);
+			ofn.lpstrTitle = "Save public key as:";
+			if (GetSaveFileName(&ofn) == 0) { // failure
+				ret = CommDlgExtendedError();
+				break;
+			}
+
+			ssh_make_comment(comment, sizeof(comment));
+
+			// saving public key file
+			fp = fopen(filename, "wb");
+			if (fp == NULL) {
+				MessageBox(dlg, "Can't open key file", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				break;
+			}
+
+			if (key_type == KEY_RSA1) { // SSH1 RSA
+				RSA *rsa = public_key.rsa;
+				int bits;
+				char *buf;
+
+				bits = BN_num_bits(rsa->n);
+				fprintf(fp, "%u", bits);
+
+				buf = BN_bn2dec(rsa->e);
+				fprintf(fp, " %s", buf);
+				OPENSSL_free(buf);
+
+				buf = BN_bn2dec(rsa->n);
+				fprintf(fp, " %s", buf);
+				OPENSSL_free(buf);
+
+			} else { // SSH2 RSA, DSA
+				buffer_t *b;
+				char *keyname;
+				DSA *dsa = public_key.dsa;
+				RSA *rsa = public_key.rsa;
+				int len;
+				char *blob;
+				char *uuenc; // uuencode data
+				int uulen;
+
+				b = buffer_init();
+				if (b == NULL)
+					goto public_error;
+
+				if (key_type == KEY_DSA) { // DSA
+					keyname = "ssh-dss";
+					buffer_put_string(b, keyname, strlen(keyname));
+					buffer_put_bignum2(b, dsa->p);
+					buffer_put_bignum2(b, dsa->q);
+					buffer_put_bignum2(b, dsa->g);
+					buffer_put_bignum2(b, dsa->pub_key);
+
+				} else { // RSA
+					keyname = "ssh-rsa";
+					buffer_put_string(b, keyname, strlen(keyname));
+					buffer_put_bignum2(b, rsa->e);
+					buffer_put_bignum2(b, rsa->n);
+				}
+				
+				blob = buffer_ptr(b);
+				len = buffer_len(b);
+				uuenc = malloc(len * 2);
+				if (uuenc == NULL) {
+					buffer_free(b);
+					goto public_error;
+				}
+				uulen = uuencode(blob, len, uuenc, len * 2);
+				if (uulen > 0) {
+					fprintf(fp, "%s %s", keyname, uuenc);
+				}
+				free(uuenc);
+				buffer_free(b);
+			}
+
+			// writing a comment(+LF)
+			fprintf(fp, " %s", comment);
+			fputc(0x0a, fp);
+
+public_error:
+			fclose(fp);
+
+			}
+			break;
+
+		// saving private key file
+		case IDC_SAVE_PRIVATE_KEY: 
+			{
+			char buf[1024], buf_conf[1024];  // passphrase 
+			int ret;
+			OPENFILENAME ofn;
+			char filename[MAX_PATH];
+			char comment[1024]; // comment string in private key
+
+			// パスフレーズのチェックを行う。パスフレーズは秘密鍵ファイルに付ける。
+			SendMessage(GetDlgItem(dlg, IDC_KEY_EDIT), WM_GETTEXT, sizeof(buf), (LPARAM)buf);
+			SendMessage(GetDlgItem(dlg, IDC_CONFIRM_EDIT), WM_GETTEXT, sizeof(buf_conf), (LPARAM)buf_conf);
+
+			// check matching
+			if (strcmp(buf, buf_conf) != 0) {
+				MessageBox(dlg, "Two passphrases don't match.", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				break;
+			}
+
+			// check empty-passphrase (this is warning level)
+			if (buf[0] == '\0') {
+				ret = MessageBox(dlg, "Are you sure that you want to use a empty passphrase?", "WARNING", MB_YESNO | MB_ICONWARNING);
+				if (ret == IDNO)
+					break;
+			}
+
+			ssh_make_comment(comment, sizeof(comment));
+
+			// saving file dialog
+			ZeroMemory(&ofn, sizeof(ofn));
+			ofn.lStructSize = sizeof(ofn);
+			ofn.hwndOwner = dlg;
+			if (key_type == KEY_RSA1) {
+				ofn.lpstrFilter = "SSH1 RSA key(identity)\0identity\0All Files(*.*)\0*.*\0\0";
+				_snprintf(filename, sizeof(filename), "identity");
+			} else if (key_type == KEY_RSA) {
+				ofn.lpstrFilter = "SSH2 RSA key(id_rsa)\0id_rsa\0All Files(*.*)\0*.*\0\0";
+				_snprintf(filename, sizeof(filename), "id_rsa");
+			} else {
+				ofn.lpstrFilter = "SSH2 DSA key(id_dsa)\0id_dsa\0All Files(*.*)\0*.*\0\0";
+				_snprintf(filename, sizeof(filename), "id_dsa");
+			}
+			ofn.lpstrFile = filename;
+			ofn.nMaxFile = sizeof(filename);
+			ofn.lpstrTitle = "Save private key as:";
+			if (GetSaveFileName(&ofn) == 0) { // failure
+				ret = CommDlgExtendedError();
+				break;
+			}
+
+			// saving private key file
+			if (key_type == KEY_RSA1) { // SSH1 RSA
+				int cipher_num;
+				buffer_t *b, *enc;
+				unsigned int rnd;
+				unsigned char tmp[128];
+				RSA *rsa;
+				int i, len;
+				char authfile_id_string[] = "SSH PRIVATE KEY FILE FORMAT 1.1";
+				MD5_CTX md;
+				unsigned char digest[16];
+				char *passphrase = buf;
+				EVP_CIPHER_CTX cipher_ctx;
+				FILE *fp;
+				char wrapped[4096];
+
+				if (passphrase[0] == '\0') { // passphrase is empty
+					cipher_num = SSH_CIPHER_NONE;
+				} else {
+					cipher_num = SSH_CIPHER_3DES; // 3DES-CBC
+				}
+
+				b = buffer_init();
+				if (b == NULL)
+					break;
+				enc = buffer_init();
+				if (enc == NULL) {
+					buffer_free(b);
+					break;
+				}
+
+				// set random value
+				rnd = arc4random();
+				tmp[0] = rnd & 0xff;
+				tmp[1] = (rnd >> 8) & 0xff;
+				tmp[2] = tmp[0];
+				tmp[3] = tmp[1];
+				buffer_append(b, tmp, 4);
+
+				// set private key
+				rsa = private_key.rsa;
+				buffer_put_bignum(b, rsa->d);
+				buffer_put_bignum(b, rsa->iqmp);
+				buffer_put_bignum(b, rsa->q);
+				buffer_put_bignum(b, rsa->p);
+
+				// padding with 8byte align
+				while (buffer_len(b) % 8) {
+					buffer_put_char(b, 0);
+				} 
+
+				//
+				// step(2)
+				//
+				// encrypted buffer
+			    /* First store keyfile id string. */
+				for (i = 0 ; authfile_id_string[i] ; i++) {
+					buffer_put_char(enc, authfile_id_string[i]);
+				}
+				buffer_put_char(enc, 0x0a); // LF
+				buffer_put_char(enc, 0);
+
+				/* Store cipher type. */
+				buffer_put_char(enc, cipher_num);
+				buffer_put_int(enc, 0);  // type is 'int'!! (For future extension)
+
+				/* Store public key.  This will be in plain text. */
+				buffer_put_int(enc, BN_num_bits(rsa->n));
+				buffer_put_bignum(enc, rsa->n);
+				buffer_put_bignum(enc, rsa->e);
+				buffer_put_string(enc, comment, strlen(comment));
+
+				// setup the MD5ed passphrase to cipher encryption key
+				MD5_Init(&md);
+				MD5_Update(&md, (const unsigned char *)passphrase, strlen(passphrase));
+				MD5_Final(digest, &md);
+				if (cipher_num == SSH_CIPHER_NONE) {
+					cipher_init_SSH2(&cipher_ctx, digest, 16, NULL, 0, CIPHER_ENCRYPT, EVP_enc_null);
+				} else {
+					cipher_init_SSH2(&cipher_ctx, digest, 16, NULL, 0, CIPHER_ENCRYPT, evp_ssh1_3des);
+				}
+				len = buffer_len(b);
+				if (len % 8) { // fatal error
+					goto error;
+				}
+
+				// check buffer overflow
+				if (buffer_overflow_verify(enc, len) && (sizeof(wrapped) < len)) {
+					goto error;
+				}
+
+				if (EVP_Cipher(&cipher_ctx, wrapped, buffer_ptr(b), len) == 0) {
+					goto error;
+				}
+				if (EVP_CIPHER_CTX_cleanup(&cipher_ctx) == 0) {
+					goto error;
+				}
+
+				buffer_append(enc, wrapped, len);
+
+				// saving private key file (binary mode)
+				fp = fopen(filename, "wb");
+				if (fp == NULL) {
+					MessageBox(dlg, "Can't open key file", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+					break;
+				}
+				fwrite(buffer_ptr(enc), buffer_len(enc), 1, fp);
+
+				fclose(fp);
+
+error:;
+				buffer_free(b);
+				buffer_free(enc);
+
+			} else { // SSH2 RSA, DSA
+				int len;
+				FILE *fp;
+				const EVP_CIPHER *cipher;
+
+				len = strlen(buf);
+				// TODO: range check (len >= 4)
+
+				cipher = NULL;
+				if (len > 0) {
+					cipher = EVP_des_ede3_cbc();
+				}
+
+				fp = fopen(filename, "w");
+				if (fp == NULL) {
+					MessageBox(dlg, "Can't open key file", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+					break;
+				}
+
+				if (key_type == KEY_RSA) { // RSA
+					ret = PEM_write_RSAPrivateKey(fp, private_key.rsa, cipher, buf, len, NULL, NULL);
+				} else { // DSA
+					ret = PEM_write_DSAPrivateKey(fp, private_key.dsa, cipher, buf, len, NULL, NULL);
+				}
+				if (ret == 0) {
+					MessageBox(dlg, "Can't write key file", "ERROR", MB_OK | MB_ICONEXCLAMATION);
+				}
+				fclose(fp);
+			}
+
+
+			}
+			break;
+
+		}
+		break;
+	}
+
+	return FALSE;
+}
+
+
 static int PASCAL FAR TTXProcessCommand(HWND hWin, WORD cmd)
 {
 	GET_VAR();
@@ -1729,6 +2748,14 @@ static int PASCAL FAR TTXProcessCommand(HWND hWin, WORD cmd)
 	}
 
 	switch (cmd) {
+	case ID_SSHKEYGENMENU: 
+		if (DialogBoxParam(hInst, MAKEINTRESOURCE(IDD_SSHKEYGEN), hWin, TTXKeyGenerator,
+			(LPARAM) pvar) == -1) {
+			MessageBox(hWin, "Cannot create Key Generator window.",
+				"TTSSH Error", MB_OK | MB_ICONEXCLAMATION);
+		}
+		return 1;
+
 	case ID_ABOUTMENU:
 		if (DialogBoxParam
 			(hInst, MAKEINTRESOURCE(IDD_ABOUTDIALOG), hWin, TTXAboutDlg,
@@ -1774,10 +2801,20 @@ static int PASCAL FAR TTXProcessCommand(HWND hWin, WORD cmd)
 
 			pvar->showing_err = TRUE;
 			pvar->err_msg = NULL;
+#if 1
+			// XXX: "SECURITY WARINIG" dialogで ESC キーを押下すると、
+			// なぜかアプリケーションエラーとなるため、下記APIは削除。(2004.12.16 yutaka)
+			if (!SSHv1(pvar)) {
+				MessageBox(NULL, msg, "TTSSH",
+						MB_TASKMODAL | MB_ICONEXCLAMATION);
+			}
+#else
 			MessageBox(NULL, msg, "TTSSH",
 					   MB_TASKMODAL | MB_ICONEXCLAMATION);
+#endif
 			free(msg);
 			pvar->showing_err = FALSE;
+
 			if (pvar->err_msg != NULL) {
 				PostMessage(hWin, WM_COMMAND, ID_SSHASYNCMESSAGEBOX, 0);
 			} else {
@@ -1788,6 +2825,39 @@ static int PASCAL FAR TTXProcessCommand(HWND hWin, WORD cmd)
 	default:
 		return 0;
 	}
+}
+
+
+// 以下はTeraTerm Menuのコード(ttpmenu.cpp)と同一。
+// 空白を @ に置き換える。@自身は@@にする。(2005.1.28 yutaka)
+static void replace_blank_to_mark(char *str, char *dst, int dst_len)
+{
+	int i, len, n;
+
+	len = strlen(str);
+	n = 0;
+	for (i = 0 ; i < len ; i++) {
+		if (str[i] == '@')
+			n++;
+	}
+	if (dst_len < (len + 2*n)) 
+		return;
+
+	for (i = 0 ; i < len ; i++) {
+		if (str[i] == '@') {
+			*dst++ = '@';
+			*dst++ = '@';
+
+		} else if (str[i] == ' ') {
+			*dst++ = '@';
+
+		} else {
+			*dst++ = str[i];
+
+		}
+	}
+	*dst = '\0';
+
 }
 
 static void PASCAL FAR TTXSetCommandLine(PCHAR cmd, int cmdlen,
@@ -1827,6 +2897,42 @@ static void PASCAL FAR TTXSetCommandLine(PCHAR cmd, int cmdlen,
 			}
 
 		}
+
+		// セッション複製の場合は、自動ログイン用パラメータを付ける。(2005.4.8 yutaka)
+		if (strstr(buf, "DUPLICATE")) {
+			char mark[MAX_PATH];
+			char tmp[MAX_PATH*2];
+
+			// 自動ログインの場合は下記フラグが0のため、必要なコマンドを付加する。
+			if (!pvar->hostdlg_Enabled) {
+				_snprintf(tmp, sizeof(tmp), " /ssh /%d", pvar->settings.ssh_protocol_version);
+				strncat(cmd, tmp, cmdlen);
+			}
+
+			if (pvar->auth_state.cur_cred.method == SSH_AUTH_PASSWORD) {
+				replace_blank_to_mark(pvar->auth_state.cur_cred.password, mark, sizeof(mark));
+				_snprintf(tmp, sizeof(tmp), " /auth=password /user=%s /passwd=%s", pvar->auth_state.user, mark);
+				strncat(cmd, tmp, cmdlen);
+
+			} else if (pvar->auth_state.cur_cred.method == SSH_AUTH_RSA) {
+				replace_blank_to_mark(pvar->auth_state.cur_cred.password, mark, sizeof(mark));
+				_snprintf(tmp, sizeof(tmp), " /auth=publickey /user=%s /passwd=%s", pvar->auth_state.user, mark);
+				strncat(cmd, tmp, cmdlen);
+
+				replace_blank_to_mark(pvar->session_settings.DefaultRSAPrivateKeyFile, mark, sizeof(mark));
+				_snprintf(tmp, sizeof(tmp), " /keyfile=%s", mark);
+				strncat(cmd, tmp, cmdlen);
+
+			} else if (pvar->auth_state.cur_cred.method == SSH_AUTH_TIS) {
+				// keyboard-interactive認証の場合は何もしない。
+
+			} else {
+				// don't come here
+
+			}
+
+		}
+
 	}
 }
 
@@ -1971,3 +3077,96 @@ int CALLBACK LibMain(HANDLE hInstance, WORD wDataSegment,
 	return (1);
 }
 #endif
+
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.24  2005/07/09 05:16:06  yutakakn
+ * OpenSSL 0.9.8でビルドできるようにした。
+ *
+ * Revision 1.23  2005/06/19 09:17:47  yutakakn
+ * SSH2 port-fowarding(local to remote)をサポートした。
+ *
+ * Revision 1.22  2005/05/15 09:14:04  yutakakn
+ * zlib versionの位置調整。
+ *
+ * Revision 1.21  2005/05/10 16:44:08  yutakakn
+ * zlibのバージョンをバージョン情報に追加した。
+ *
+ * Revision 1.20  2005/04/23 17:26:57  yutakakn
+ * キー作成ダイアログの追加。
+ *
+ * Revision 1.19  2005/04/08 14:55:03  yutakakn
+ * "Duplicate session"においてSSH自動ログインを行うようにした。
+ *
+ * Revision 1.18  2005/04/03 14:39:48  yutakakn
+ * SSH2 channel lookup機構の追加（ポートフォワーディングのため）。
+ * TTSSH 2.10で追加したlog dump機構において、DH鍵再作成時にbuffer freeで
+ * アプリケーションが落ちてしまうバグを修正。
+ *
+ * Revision 1.17  2005/03/27 04:39:55  yutakakn
+ * SSH2のログ採取(verbose)のデータを追加した。
+ *
+ * Revision 1.16  2005/03/23 12:39:20  yutakakn
+ * シリアルポートを開いた状態からAlt-Nで新規接続を開こうとしたとき、フォーカスを当てるようにした。
+ *
+ * Revision 1.15  2005/03/12 15:07:34  yutakakn
+ * SSH2 keyboard-interactive認証をTISダイアログに実装した。
+ *
+ * Revision 1.14  2005/03/12 12:08:05  yutakakn
+ * パスワード認証の前に行うkeyboard-interactiveメソッドで、デフォルト設定値を無効(0)にした。
+ * また、認証ダイアログのラベル名を設定の有無により変更するようにした。
+ *
+ * Revision 1.13  2005/03/03 13:28:23  yutakakn
+ * クライアントのSSHバージョンを ttxssh.dll から取得して、サーバへ送るようにした。
+ *
+ * Revision 1.12  2005/02/28 14:51:44  yutakakn
+ * バージョンダイアログに表示するTTSSHのバージョンを、ttxssh.dllの
+ * バージョン情報から取得するようにした。
+ *
+ * Revision 1.11  2005/02/22 08:48:11  yutakakn
+ * TTSSH setupダイアログに HeartBeat 設定を追加。
+ * TTSSH authentication setupダイアログに keyboard-interactive 設定を追加。
+ *
+ * Revision 1.10  2005/01/27 13:30:33  yutakakn
+ * 公開鍵認証自動ログインをサポート。
+ * /auth=publickey, /keyfile オプションを新規追加した。
+ * また、空白を含む引数をサポート。
+ *
+ * Revision 1.9  2005/01/24 14:07:07  yutakakn
+ * ・keyboard-interactive認証をサポートした。
+ * 　それに伴い、teraterm.iniに "KeyboardInteractive" エントリを追加した。
+ * ・バージョンダイアログに OpenSSLバージョン を追加
+ *
+ * Revision 1.8  2004/12/27 14:05:08  yutakakn
+ * 'Auto window close'が有効の場合、切断後の接続ができない問題を修正した。
+ * 　・スレッドの終了待ち合わせ処理の追加
+ * 　・確保済みSSHリソースの解放
+ *
+ * Revision 1.7  2004/12/17 14:28:36  yutakakn
+ * メッセージ認証アルゴリズムに HMAC-MD5 を追加。
+ * TTSSHバージョンダイアログにHMACアルゴリズム表示を追加。
+ *
+ * Revision 1.6  2004/12/16 13:57:43  yutakakn
+ * "SECURITY WARINIG" dialogで ESC キーを押下すると、
+ * アプリケーションエラーとなる現象への暫定対処。
+ *
+ * Revision 1.5  2004/12/11 07:31:00  yutakakn
+ * SSH heartbeatスレッドの追加した。これにより、IPマスカレード環境において、ルータの
+ * NATテーブルクリアにより、SSHコネクションが切断される現象が回避される。
+ * それに合わせて、teraterm.iniのTTSSHセクションに、HeartBeat エントリを追加。
+ *
+ * Revision 1.4  2004/12/01 15:37:49  yutakakn
+ * SSH2自動ログイン機能を追加。
+ * 現状、パスワード認証のみに対応。
+ * ・コマンドライン
+ *   /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+ *
+ * Revision 1.3  2004/11/29 15:52:37  yutakakn
+ * SSHのdefault protocolをSSH2にした。
+ *
+ * Revision 1.2  2004/11/23 14:32:26  yutakakn
+ * 接続ダイアログの起動時に、TCP/IPの「ホスト名」にフォーカスが当たるようにした。
+ *
+ *
+ */

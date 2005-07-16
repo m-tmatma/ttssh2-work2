@@ -1,5 +1,6 @@
 /*
 Copyright (c) 1998-2001, Robert O'Callahan
+Copyright (c) 2004-2005, Yutaka Hirata
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without modification,
@@ -33,17 +34,26 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <openssl/evp.h>
 #include <openssl/dh.h>
 #include <openssl/engine.h>
+#include <openssl/rsa.h>
+#include <openssl/dsa.h>
 #include <limits.h>
 #include <malloc.h>
 #include <string.h>
 #include <stdlib.h>
+#include <process.h>
+#include <time.h>
 #include "buffer.h"
 #include "ssh.h"
 #include "crypt.h"
 
+// SSH2 macro
 #ifdef _DEBUG
 #define SSH2_DEBUG
 #endif
+
+#define DONT_WANTCONFIRM 1  // (2005.3.28 yutaka)
+#define INTBLOB_LEN 20
+#define SIGBLOB_LEN (2*INTBLOB_LEN)
 
 static char ssh_ttymodes[] = "\x01\x03\x02\x1c\x03\x08\x04\x15\x05\x04";
 
@@ -63,12 +73,15 @@ static BOOL handle_SSH2_userauth_success(PTInstVar pvar);
 static BOOL handle_SSH2_userauth_failure(PTInstVar pvar);
 static BOOL handle_SSH2_userauth_banner(PTInstVar pvar);
 static BOOL handle_SSH2_open_confirm(PTInstVar pvar);
+static BOOL handle_SSH2_open_failure(PTInstVar pvar);
 static BOOL handle_SSH2_request_success(PTInstVar pvar);
+static BOOL handle_SSH2_request_failure(PTInstVar pvar);
 static BOOL handle_SSH2_channel_success(PTInstVar pvar);
 static BOOL handle_SSH2_channel_data(PTInstVar pvar);
 static BOOL handle_SSH2_channel_extended_data(PTInstVar pvar);
 static BOOL handle_SSH2_channel_eof(PTInstVar pvar);
 static BOOL handle_SSH2_channel_close(PTInstVar pvar);
+static BOOL handle_SSH2_channel_open(PTInstVar pvar);
 static BOOL handle_SSH2_window_adjust(PTInstVar pvar);
 static BOOL handle_SSH2_channel_request(PTInstVar pvar);
 void SSH2_dispatch_init(int stage);
@@ -76,6 +89,342 @@ int SSH2_dispatch_enabled_check(unsigned char message);
 void SSH2_dispatch_add_message(unsigned char message);
 void SSH2_dispatch_add_range_message(unsigned char begin, unsigned char end);
 int dh_pub_is_valid(DH *dh, BIGNUM *dh_pub);
+static void start_ssh_heartbeat_thread(PTInstVar pvar);
+
+
+//
+// SSH2 data structure
+//
+
+/* default window/packet sizes for tcp/x11-fwd-channel */
+#define CHAN_SES_PACKET_DEFAULT (32*1024)
+#define CHAN_SES_WINDOW_DEFAULT (2*CHAN_SES_PACKET_DEFAULT) // READAMOUNT @ pkt.cと同期を取ること
+#define CHAN_TCP_PACKET_DEFAULT	(32*1024)
+#define CHAN_TCP_WINDOW_DEFAULT	(4*CHAN_TCP_PACKET_DEFAULT)
+#define CHAN_X11_PACKET_DEFAULT	(16*1024)
+#define CHAN_X11_WINDOW_DEFAULT	(4*CHAN_X11_PACKET_DEFAULT)
+
+// channel data structure
+#define CHANNEL_MAX 100
+
+enum channel_type {
+	TYPE_SHELL, TYPE_PORTFWD, 
+};
+
+typedef struct channel {
+	int used;
+	int self_id;
+	int remote_id;
+	unsigned int local_window;
+	unsigned int local_window_max;
+	unsigned int local_consumed;
+	unsigned int local_maxpacket;
+	unsigned int remote_window;
+	unsigned int remote_maxpacket;
+	enum channel_type type;
+	int local_num;
+} Channel_t;
+
+static Channel_t channels[CHANNEL_MAX];
+
+//
+// channel function
+//
+static Channel_t *ssh2_channel_new(unsigned int window, unsigned int maxpack, enum confirm_type type, int local_num)
+{
+	int i, found;
+	Channel_t *c;
+
+	found = -1;
+	for (i = 0 ; i < CHANNEL_MAX ; i++) {
+		if (channels[i].used == 0) { // free channel
+			found = i;
+			break;
+		}
+	}
+	if (found == -1) { // not free channel
+		return (NULL);
+	}
+
+	// setup
+	c = &channels[found];
+	c->used = 1;
+	c->self_id = i;
+	c->remote_id = -1;
+	c->local_window = window;
+	c->local_window_max = window;
+	c->local_consumed = 0;
+	c->local_maxpacket = maxpack;
+	c->remote_window = 0;
+	c->remote_maxpacket = 0;
+	c->type = type;
+	c->local_num = local_num;  // alloc_channel()の返値を保存しておく
+
+	return (c);
+}
+
+
+// connection close時に呼ばれる
+void ssh2_channel_free(void)
+{
+	int i;
+	Channel_t *c;
+
+	for (i = 0 ; i < CHANNEL_MAX ; i++) {
+		c = &channels[i];
+		memset(c, 0, sizeof(Channel_t));
+	}
+
+}
+
+static Channel_t *ssh2_channel_lookup(int id)
+{
+	Channel_t *c;
+
+	if (id < 0 || id >= CHANNEL_MAX) {
+		return (NULL);
+	}
+	c = &channels[id];
+	if (c->used == 0) { // already freed
+		return (NULL);
+	}
+	return (c);
+}
+
+// SSH1で管理しているchannel構造体から、SSH2向けのChannel_tへ変換する。
+// TODO: 将来的にはチャネル構造体は1つに統合する。
+// (2005.6.12 yutaka)
+static Channel_t *ssh2_local_channel_lookup(int local_num)
+{
+	int i;
+	Channel_t *c;
+
+	for (i = 0 ; i < CHANNEL_MAX ; i++) {
+		c = &channels[i];
+		if (c->local_num == local_num)
+			return (c);
+	}
+	return (NULL);
+}
+
+
+//
+// SSH heartbeat mutex
+//
+static CRITICAL_SECTION g_ssh_heartbeat_lock;   /* ロック用変数 */
+
+void ssh_heartbeat_lock_initialize(void)
+{
+	InitializeCriticalSection(&g_ssh_heartbeat_lock);
+}
+
+void ssh_heartbeat_lock_finalize(void)
+{
+	DeleteCriticalSection(&g_ssh_heartbeat_lock);
+}
+
+void ssh_heartbeat_lock(void)
+{
+	EnterCriticalSection(&g_ssh_heartbeat_lock);
+}
+
+void ssh_heartbeat_unlock(void)
+{
+	LeaveCriticalSection(&g_ssh_heartbeat_lock);
+}
+
+
+//
+// SSH memory dump (for debug)
+//
+// (2005.3.7 yutaka)
+//
+#define MEMTAG_MAX 100
+#define LOGDUMP "ssh2dump.log"
+#define SENDTOME "Please send '"LOGDUMP"' file to TeraTerm developer team."
+
+typedef struct memtag {
+	char *name;
+	char *desc;
+	int len;
+	char *data;
+} memtag_t;
+
+static memtag_t memtags[MEMTAG_MAX];
+static int memtag_count = 0;
+static int memtag_use = 0; 
+
+/* ダンプラインをフォーマット表示する */
+static void displine_memdump(FILE *fp, int addr, int *bytes, int byte_cnt)
+{
+	int i, c;
+
+	/* 先頭のアドレス表示 */
+	fprintf(fp, "%08X : ", addr);
+
+	/* バイナリ表示（4バイトごとに空白を挿入）*/
+	for (i = 0 ; i < byte_cnt ; i++) {
+		if (i > 0 && i % 4 == 0)
+			fprintf(fp, " ");
+
+		fprintf(fp, "%02X", bytes[i]);
+	}
+
+	/* ASCII表示部分までの空白を補う */
+	fprintf(fp, "   %*s%*s", (16-byte_cnt)*2+1, " ", (16-byte_cnt+3)/4, " ");
+
+	/* ASCII表示 */
+	for (i = 0 ; i < byte_cnt ; i++) {
+		c = bytes[i];
+		if (c >= 0x20 && c <= 0x7f) {
+			fprintf(fp, "%c", c);
+		} else {
+			fprintf(fp, ".");
+		}
+	}
+
+	fprintf(fp, "\n");
+}
+
+
+/* ダンプルーチン */
+static void dump_memdump(FILE *fp, char *data, int len)
+{
+	int c, addr;
+	int bytes[16], *ptr;
+	int byte_cnt;
+	int i;
+
+	addr = 0;
+	byte_cnt = 0;
+	ptr = bytes;
+	for (i = 0 ; i < len ; i++) {
+		c = data[i];
+		*ptr++ = c & 0xff;
+		byte_cnt++;
+
+		if (byte_cnt == 16) {
+			displine_memdump(fp, addr, bytes, byte_cnt);
+
+			addr += 16;
+			byte_cnt = 0;
+			ptr = bytes;
+		}
+	}
+
+	if (byte_cnt > 0) {
+		displine_memdump(fp, addr, bytes, byte_cnt);
+	}
+}
+
+void init_memdump(void)
+{
+	int i;
+
+	for (i = 0 ; i < MEMTAG_MAX ; i++) {
+		memtags[i].name = NULL;
+		memtags[i].desc = NULL;
+		memtags[i].data = NULL;
+		memtags[i].len = 0;
+	}
+	memtag_use++;
+}
+
+void finish_memdump(void)
+{
+	int i;
+
+	// initializeされてないときは何もせずに戻る。(2005.4.3 yutaka)
+	if (memtag_use <= 0)
+		return;
+	memtag_use--;
+
+	for (i = 0 ; i < MEMTAG_MAX ; i++) {
+		free(memtags[i].name);
+		free(memtags[i].desc);
+		free(memtags[i].data);
+		memtags[i].len = 0;
+	}
+}
+
+void save_memdump(char *filename)
+{
+	FILE *fp;
+	int i;
+	time_t t;
+	struct tm *tm;
+
+	fp = fopen(filename, "w");
+	if (fp == NULL)
+		return;
+
+	t = time(NULL);
+	tm = localtime(&t);
+
+	fprintf(fp, "<<< TeraTerm SSH2 log dump >>>\n");
+	fprintf(fp, "saved time: %04d/%02d/%02d %02d:%02d:%02d\n",
+			tm->tm_year + 1900,
+			tm->tm_mon + 1,
+			tm->tm_mday,
+			tm->tm_hour,
+			tm->tm_min,
+			tm->tm_sec);
+	fprintf(fp, "\n");
+
+	for (i = 0 ; i < memtag_count ; i++) {
+		fprintf(fp, "============================================\n");
+		fprintf(fp, "name: %s\n", memtags[i].name);
+		fprintf(fp, "--------------------------------------------\n");
+		fprintf(fp, "description: %s\n", memtags[i].desc);
+		fprintf(fp, "============================================\n");
+		dump_memdump(fp, memtags[i].data, memtags[i].len);
+		fprintf(fp, "\n\n\n");
+	}
+
+	fprintf(fp, "[EOF]\n");
+
+	fclose(fp);
+}
+
+void push_memdump(char *name, char *desc, char *data, int len)
+{
+	memtag_t *ptr;
+	char *dp;
+
+	dp = malloc(len);
+	if (dp == NULL)
+		return;
+	memcpy(dp, data, len);
+
+	if (memtag_count >= MEMTAG_MAX)
+		return;
+
+	ptr = &memtags[memtag_count];
+	memtag_count++;
+	ptr->name = strdup(name);
+	ptr->desc = strdup(desc);
+	ptr->data = dp;
+	ptr->len = len;
+}
+
+void push_bignum_memdump(char *name, char *desc, BIGNUM *bignum)
+{
+	int len;
+	char *buf;
+
+	len = BN_num_bytes(bignum);
+	buf = malloc(len); // allocate
+	if (buf == NULL)
+		return;
+	BN_bn2bin(bignum, buf);
+	push_memdump(name, desc, buf, len); // at push_bignum_memdump()
+	free(buf); // free
+}
+
+
+//
+//
+//
 
 
 static int get_predecryption_amount(PTInstVar pvar)
@@ -170,7 +519,10 @@ static BOOL grab_payload(PTInstVar pvar, int num_bytes)
 	} else {
 		pvar->ssh_state.payload_grabbed += num_bytes;
 		if (pvar->ssh_state.payload_grabbed > in_buffer) {
-			notify_fatal_error(pvar, "Received truncated packet");
+			char buf[128];
+			_snprintf(buf, sizeof(buf), "Received truncated packet (%ld > %d) @ grab_payload()", 
+				pvar->ssh_state.payload_grabbed, in_buffer);
+			notify_fatal_error(pvar, buf);
 			return FALSE;
 		} else {
 			return TRUE;
@@ -189,7 +541,10 @@ static BOOL grab_payload_limited(PTInstVar pvar, int num_bytes)
 		return FALSE;
 	} else {
 		if (pvar->ssh_state.payload_grabbed > in_buffer) {
-			notify_fatal_error(pvar, "Received truncated packet");
+			char buf[128];
+			_snprintf(buf, sizeof(buf), "Received truncated packet (%ld > %d) @ grab_payload_limited()", 
+				pvar->ssh_state.payload_grabbed, in_buffer);
+			notify_fatal_error(pvar, buf);
 			return FALSE;
 		} else {
 			return TRUE;
@@ -260,26 +615,59 @@ static int prep_packet(PTInstVar pvar, char FAR * data, int len,
 
 	pvar->ssh_state.payload_grabbed = 0;
 
-	if (pvar->ssh_state.decompressing) {
-		if (pvar->ssh_state.decompress_stream.avail_in != 0) {
-			notify_nonfatal_error(pvar,
-								  "Internal error: a packet was not fully decompressed.\n"
-								  "This is a bug, please report it.");
+	if (SSHv1(pvar)) {
+		if (pvar->ssh_state.decompressing) {
+			if (pvar->ssh_state.decompress_stream.avail_in != 0) {
+				notify_nonfatal_error(pvar,
+									"Internal error: a packet was not fully decompressed.\n"
+									"This is a bug, please report it.");
+			}
+
+			pvar->ssh_state.decompress_stream.next_in =
+				pvar->ssh_state.payload;
+			pvar->ssh_state.decompress_stream.avail_in =
+				pvar->ssh_state.payloadlen;
+			pvar->ssh_state.decompress_stream.next_out =
+				pvar->ssh_state.postdecompress_inbuf;
+			pvar->ssh_state.payloadlen = -1;
+		} else {
+			pvar->ssh_state.payload++;
 		}
 
-		pvar->ssh_state.decompress_stream.next_in =
-			pvar->ssh_state.payload;
-		pvar->ssh_state.decompress_stream.avail_in =
-			pvar->ssh_state.payloadlen;
-		pvar->ssh_state.decompress_stream.next_out =
-			pvar->ssh_state.postdecompress_inbuf;
-		pvar->ssh_state.payloadlen = -1;
-	} else {
-		pvar->ssh_state.payload++;
-	}
+		if (!grab_payload_limited(pvar, 1)) {
+			return SSH_MSG_NONE;
+		}
 
-	if (!grab_payload_limited(pvar, 1)) {
-		return SSH_MSG_NONE;
+	} else {
+		// support of SSH2 packet compression (2005.7.9 yutaka)
+		if (pvar->stoc_compression && pvar->ssh2_keys[MODE_IN].comp.enabled) { // compression enabled
+			int ret;
+
+			if (pvar->decomp_buffer == NULL) {
+				pvar->decomp_buffer = buffer_init();
+				if (pvar->decomp_buffer == NULL) 
+					return SSH_MSG_NONE;
+			}
+			// 一度確保したバッファは使い回すので初期化を忘れずに。
+			buffer_clear(pvar->decomp_buffer);
+
+			// packet sizeとpaddingを取り除いたペイロード部分のみを展開する。
+			ret = buffer_decompress(&pvar->ssh_state.decompress_stream, 
+				pvar->ssh_state.payload, pvar->ssh_state.payloadlen, pvar->decomp_buffer);
+
+			// ポインタの更新。
+			pvar->ssh_state.payload = buffer_ptr(pvar->decomp_buffer);
+			pvar->ssh_state.payload++;
+			pvar->ssh_state.payloadlen = buffer_len(pvar->decomp_buffer);
+
+		} else {
+			pvar->ssh_state.payload++;
+		}
+
+		if (!grab_payload_limited(pvar, 1)) {
+			return SSH_MSG_NONE;
+		}
+
 	}
 
 	pvar->ssh_state.receiver_sequence_number++;
@@ -350,6 +738,7 @@ static void finish_send_packet_special(PTInstVar pvar, int skip_compress)
 	int len = pvar->ssh_state.outgoing_packet_len;
 	char FAR *data;
 	int data_length;
+	buffer_t *msg = NULL; // for SSH2 packet compression
 
 	if (pvar->ssh_state.compressing) {
 		if (!skip_compress) {
@@ -400,11 +789,53 @@ static void finish_send_packet_special(PTInstVar pvar, int skip_compress)
 		int padding;
 		BOOL ret;
 
+		/*
+		 データ構造
+		 pvar->ssh_state.outbuf:
+		 offset: 0 1 2 3 4 5 6 7 8 9 10 11 12 ...         EOD
+		         <--ignore---> ^^^^^^^^    <---- payload --->  
+				               packet length
+
+							            ^^padding
+
+							   <---------------------------->
+							      SSH2 sending data on TCP
+		 
+		 NOTE:
+		   payload = type(1) + raw-data
+		   len = ssh_state.outgoing_packet_len = payload size
+		 */
+		// パケット圧縮が有効の場合、パケットを圧縮してから送信パケットを構築する。(2005.7.9 yutaka)
+		if (pvar->ctos_compression && pvar->ssh2_keys[MODE_OUT].comp.enabled) {
+			// このバッファは packet-length(4) + padding(1) + payload(any) を示す。
+			msg = buffer_init(); 
+			if (msg == NULL) {
+				// TODO: error check
+				return;
+			}
+
+			// 圧縮対象はヘッダを除くペイロードのみ。
+			buffer_append(msg, "\0\0\0\0\0", 5);  // 5 = packet-length(4) + padding(1)
+			if (buffer_compress(&pvar->ssh_state.compress_stream, pvar->ssh_state.outbuf + 12, len, msg) == -1) {
+				notify_fatal_error(pvar,
+								   "An error occurred while compressing packet data.\n"
+								   "The connection will close.");
+				return;
+			}
+			data = buffer_ptr(msg);
+			len = buffer_len(msg) - 5;  // 'len' is overwritten.
+
+		} else {
+			// 無圧縮
+			data = pvar->ssh_state.outbuf + 7;
+
+		}
+
+		// 送信パケット構築(input parameter: data, len)
 		if (block_size < 8) {
 			block_size = 8;
 		}
 		encryption_size = ((len + 8) / block_size + 1) * block_size;
-		data = pvar->ssh_state.outbuf + 7;
 		data_length = encryption_size + CRYPT_get_sender_MAC_size(pvar);
 
 		set_uint32(data, encryption_size - 4);
@@ -425,7 +856,12 @@ static void finish_send_packet_special(PTInstVar pvar, int skip_compress)
 
 	send_packet_blocking(pvar, data, data_length);
 
+	buffer_free(msg);
+
 	pvar->ssh_state.sender_sequence_number++;
+
+	// 送信時刻を記録 
+	pvar->ssh_heartbeat_tick = time(NULL);
 }
 
 static void destroy_packet_buf(PTInstVar pvar)
@@ -571,6 +1007,9 @@ static BOOL handle_auth_failure(PTInstVar pvar)
 {
 	notify_verbose_message(pvar, "Authentication failed",
 						   LOG_LEVEL_VERBOSE);
+
+	// retry countの追加 (2005.7.15 yutaka)
+	pvar->userauth_retry_count++;
 
 	AUTH_set_generic_mode(pvar);
 	AUTH_advance_to_next_cred(pvar);
@@ -755,6 +1194,10 @@ static BOOL handle_auth_success(PTInstVar pvar)
 	notify_verbose_message(pvar, "Authentication accepted",
 						   LOG_LEVEL_VERBOSE);
 	prep_compression(pvar);
+
+	// ハートビート・スレッドの開始 (2004.12.11 yutaka)
+	start_ssh_heartbeat_thread(pvar);
+
 	return FALSE;
 }
 
@@ -860,11 +1303,6 @@ static BOOL parse_protocol_ID(PTInstVar pvar, char FAR * ID)
 			pvar->protocol_minor = 0;
 		}
 
-#ifdef SSH2_DEBUG
-		pvar->protocol_major = 2;
-		pvar->protocol_minor = 0;
-#endif
-
 	}
 
 	for (str = str + 1; *str >= '0' && *str <= '9'; str++) {
@@ -922,6 +1360,7 @@ static void init_protocol(PTInstVar pvar)
 		enque_handler(pvar, SSH2_MSG_USERAUTH_SUCCESS, handle_SSH2_userauth_success);
 		enque_handler(pvar, SSH2_MSG_USERAUTH_FAILURE, handle_SSH2_userauth_failure);
 		enque_handler(pvar, SSH2_MSG_USERAUTH_BANNER, handle_SSH2_userauth_banner);
+		enque_handler(pvar, SSH2_MSG_USERAUTH_INFO_REQUEST, handle_SSH2_userauth_inforeq);
 
 		enque_handler(pvar, SSH2_MSG_UNIMPLEMENTED, handle_unimplemented);
 
@@ -930,14 +1369,14 @@ static void init_protocol(PTInstVar pvar)
 		enque_handler(pvar, SSH2_MSG_CHANNEL_DATA, handle_SSH2_channel_data);
 		enque_handler(pvar, SSH2_MSG_CHANNEL_EOF, handle_SSH2_channel_eof);
 //		enque_handler(pvar, SSH2_MSG_CHANNEL_EXTENDED_DATA, handle_SSH2_channel_extended_data);
-//		enque_handler(pvar, SSH2_MSG_CHANNEL_OPEN, handle_unimplemented);
+		enque_handler(pvar, SSH2_MSG_CHANNEL_OPEN, handle_SSH2_channel_open);
 		enque_handler(pvar, SSH2_MSG_CHANNEL_OPEN_CONFIRMATION, handle_SSH2_open_confirm);
-//		enque_handler(pvar, SSH2_MSG_CHANNEL_OPEN_FAILURE, handle_unimplemented);
+		enque_handler(pvar, SSH2_MSG_CHANNEL_OPEN_FAILURE, handle_SSH2_open_failure);
 		enque_handler(pvar, SSH2_MSG_CHANNEL_REQUEST, handle_SSH2_channel_request);
 		enque_handler(pvar, SSH2_MSG_CHANNEL_WINDOW_ADJUST, handle_SSH2_window_adjust);
 		enque_handler(pvar, SSH2_MSG_CHANNEL_SUCCESS, handle_SSH2_channel_success);
 //		enque_handler(pvar, SSH2_MSG_GLOBAL_REQUEST, handle_unimplemented);
-//		enque_handler(pvar, SSH2_MSG_REQUEST_FAILURE, handle_unimplemented);
+		enque_handler(pvar, SSH2_MSG_REQUEST_FAILURE, handle_SSH2_request_failure);
 		enque_handler(pvar, SSH2_MSG_REQUEST_SUCCESS, handle_SSH2_request_success);
 
 	}
@@ -946,6 +1385,10 @@ static void init_protocol(PTInstVar pvar)
 BOOL SSH_handle_server_ID(PTInstVar pvar, char FAR * ID, int ID_len)
 {
 	static const char prefix[] = "Received server prologue string: ";
+
+	// initialize SSH2 memory dump (2005.3.7 yutaka)
+	init_memdump();
+	push_memdump("pure server ID", "プロトコル識別文字列交換開始", ID, ID_len);
 
 	if (ID_len <= 0) {
 		return FALSE;
@@ -962,11 +1405,14 @@ BOOL SSH_handle_server_ID(PTInstVar pvar, char FAR * ID, int ID_len)
 		free(buf);
 
 
+		// ここでのコピーは削除 (2005.3.9 yutaka)
+#if 0
 		// for calculate SSH2 hash
 		// サーババージョンの保存（改行は取り除くこと）
 		if (ID_len >= sizeof(pvar->server_version_string)) 
 			return FALSE;
 		strncpy(pvar->server_version_string, ID, ID_len);
+#endif
 
 
 		if (ID[ID_len - 1] != '\n') {
@@ -994,15 +1440,22 @@ BOOL SSH_handle_server_ID(PTInstVar pvar, char FAR * ID, int ID_len)
 			} else {
 				char TTSSH_ID[1024];
 				int TTSSH_ID_len;
+				int a, b, c, d;
+
+				// 自分自身のバージョンを取得する (2005.3.3 yutaka)
+				get_file_version("ttxssh.dll", &a, &b, &c, &d);
 
 				_snprintf(TTSSH_ID, sizeof(TTSSH_ID),
-						  "SSH-%d.%d-TTSSH/1.5.4 Win32\n",
-						  pvar->protocol_major, pvar->protocol_minor);
+						  "SSH-%d.%d-TTSSH/%d.%d Win32\n",
+						  pvar->protocol_major, pvar->protocol_minor, a, b);
 				TTSSH_ID_len = strlen(TTSSH_ID);
 
 				// for SSH2(yutaka)
 				// クライアントバージョンの保存（改行は取り除くこと）
 				strncpy(pvar->client_version_string, TTSSH_ID, TTSSH_ID_len);
+
+				// サーババージョンの保存（改行は取り除くこと）(2005.3.9 yutaka)
+				_snprintf(pvar->server_version_string, sizeof(pvar->server_version_string), "%s", pvar->ssh_state.server_ID);
 
 				if ((pvar->Psend) (pvar->socket, TTSSH_ID, TTSSH_ID_len,
 								   0) != TTSSH_ID_len) {
@@ -1011,14 +1464,17 @@ BOOL SSH_handle_server_ID(PTInstVar pvar, char FAR * ID, int ID_len)
 									   "The connection will close.");
 				} else {
 					// 改行コードの除去 (2004.8.4 yutaka)
-					pvar->server_version_string[--ID_len] = 0;
 					pvar->client_version_string[--TTSSH_ID_len] = 0;
+
+					push_memdump("server ID", NULL, pvar->server_version_string, strlen(pvar->server_version_string));
+					push_memdump("client ID", NULL, pvar->client_version_string, strlen(pvar->client_version_string));
 
 					// SSHハンドラの登録を行う
 					init_protocol(pvar);
 
 					SSH2_dispatch_init(1);
 					SSH2_dispatch_add_message(SSH2_MSG_KEXINIT);
+					SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX: Tru64 UNIX workaround   (2005.3.3 yutaka)
 				}
 			}
 
@@ -1064,7 +1520,8 @@ static BOOL handle_channel_open(PTInstVar pvar)
 			FWD_open(pvar, get_payload_uint32(pvar, 0),
 					 pvar->ssh_state.payload + 8, local_port,
 					 pvar->ssh_state.payload + 16 + host_len,
-					 originator_len);
+					 originator_len, 
+					 NULL);
 		}
 	} else {
 		if (grab_payload(pvar, 8)
@@ -1075,7 +1532,8 @@ static BOOL handle_channel_open(PTInstVar pvar)
 
 			pvar->ssh_state.payload[8 + host_len] = 0;
 			FWD_open(pvar, get_payload_uint32(pvar, 0),
-					 pvar->ssh_state.payload + 8, local_port, NULL, 0);
+					 pvar->ssh_state.payload + 8, local_port, NULL, 0,
+					 NULL);
 		}
 	}
 
@@ -1092,11 +1550,11 @@ static BOOL handle_X11_channel_open(PTInstVar pvar)
 			&& grab_payload(pvar, originator_len =
 							get_payload_uint32(pvar, 4))) {
 			FWD_X11_open(pvar, get_payload_uint32(pvar, 0),
-						 pvar->ssh_state.payload + 8, originator_len);
+						 pvar->ssh_state.payload + 8, originator_len, NULL);
 		}
 	} else {
 		if (grab_payload(pvar, 4)) {
-			FWD_X11_open(pvar, get_payload_uint32(pvar, 0), NULL, 0);
+			FWD_X11_open(pvar, get_payload_uint32(pvar, 0), NULL, 0, NULL);
 		}
 	}
 
@@ -1192,71 +1650,6 @@ void SSH2_dispatch_add_range_message(unsigned char begin, unsigned char end)
 	for (c = begin ; c <= end ; c++) {
 		SSH2_dispatch_add_message(c);
 	}
-}
-
-
-/* default window/packet sizes for tcp/x11-fwd-channel */
-#define CHAN_SES_PACKET_DEFAULT (32*1024)
-#define CHAN_SES_WINDOW_DEFAULT (2*CHAN_SES_PACKET_DEFAULT) // READAMOUNT @ pkt.cと同期を取ること
-
-//#define CHAN_TCP_PACKET_DEFAULT (32*1024)
-//#define CHAN_TCP_WINDOW_DEFAULT (4*CHAN_TCP_PACKET_DEFAULT)
-//#define CHAN_X11_PACKET_DEFAULT (16*1024)
-//#define CHAN_X11_WINDOW_DEFAULT (4*CHAN_X11_PACKET_DEFAULT)
-
-// クライアントのwindow sizeをサーバへ知らせる
-static void do_SSH2_adjust_window_size(PTInstVar pvar)
-{
-	const unsigned int window_size = CHAN_SES_PACKET_DEFAULT;
-	buffer_t *msg;
-	unsigned char *outmsg;
-	int len;
-
-	// ローカルのwindow sizeにまだ余裕があるなら、何もしない。
-	if (pvar->local_window > window_size)
-		return;
-
-	{
-		// pty open
-		msg = buffer_init();
-		if (msg == NULL) {
-			// TODO: error check
-			return;
-		}
-		buffer_put_int(msg, pvar->remote_id);  
-		buffer_put_int(msg, window_size - pvar->local_window);  
-
-		len = buffer_len(msg);
-		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_WINDOW_ADJUST, len);
-		memcpy(outmsg, buffer_ptr(msg), len);
-		finish_send_packet(pvar);
-		buffer_free(msg);
-
-		// クライアントのwindow sizeを増やす
-		pvar->local_window = window_size;
-	}
-
-}
-
-
-static void SSH2_consume_packet_size(PTInstVar pvar, unsigned char message)
-{
-	int len;
-	char *data;
-
-	if (!(message >= SSH2_MSG_CHANNEL_OPEN_CONFIRMATION && message <= SSH2_MSG_CHANNEL_FAILURE)) {
-		return;
-	}
-
-	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
-	data = pvar->ssh_state.payload;
-	// パケットサイズ - (パディングサイズ+1)；真のパケットサイズ
-	len = pvar->ssh_state.payloadlen;
-
-	pvar->local_window -= (len + 1);
-
-	do_SSH2_adjust_window_size(pvar);
-
 }
 
 
@@ -1381,8 +1774,19 @@ static void prep_forwarding(PTInstVar pvar)
 	prep_pty(pvar);
 }
 
-static void enable_compression(PTInstVar pvar)
+
+//
+//
+// (2005.7.10 yutaka)
+static void enable_send_compression(PTInstVar pvar)
 {
+	static int initialize = 0;
+
+	if (initialize) {
+		deflateEnd(&pvar->ssh_state.compress_stream);
+	}
+	initialize = 1;
+
 	pvar->ssh_state.compress_stream.zalloc = NULL;
 	pvar->ssh_state.compress_stream.zfree = NULL;
 	pvar->ssh_state.compress_stream.opaque = NULL;
@@ -1394,8 +1798,23 @@ static void enable_compression(PTInstVar pvar)
 						   "The connection will close.");
 		return;
 	} else {
-		pvar->ssh_state.compressing = TRUE;
+		// SSH2では圧縮・展開処理をSSH1とは別に行うので、下記フラグは落としておく。(2005.7.9 yutaka)
+		if (SSHv2(pvar)) {
+			pvar->ssh_state.compressing = FALSE;
+		} else {
+			pvar->ssh_state.compressing = TRUE;
+		}
 	}
+}
+
+static void enable_recv_compression(PTInstVar pvar)
+{
+	static int initialize = 0;
+
+	if (initialize) {
+		deflateEnd(&pvar->ssh_state.decompress_stream);
+	}
+	initialize = 1;
 
 	pvar->ssh_state.decompress_stream.zalloc = NULL;
 	pvar->ssh_state.decompress_stream.zfree = NULL;
@@ -1407,10 +1826,29 @@ static void enable_compression(PTInstVar pvar)
 						   "The connection will close.");
 		return;
 	} else {
-		pvar->ssh_state.decompressing = TRUE;
+		// SSH2では圧縮・展開処理をSSH1とは別に行うので、下記フラグは落としておく。(2005.7.9 yutaka)
+		if (SSHv2(pvar)) {
+			pvar->ssh_state.decompressing = FALSE;
+		} else {
+			pvar->ssh_state.decompressing = TRUE;
+		}
+
 		buf_ensure_size(&pvar->ssh_state.postdecompress_inbuf,
 						&pvar->ssh_state.postdecompress_inbuflen, 1000);
 	}
+}
+
+static void enable_compression(PTInstVar pvar)
+{
+	enable_send_compression(pvar);
+	enable_recv_compression(pvar);
+
+	// SSH2では圧縮・展開処理をSSH1とは別に行うので、下記フラグは落としておく。(2005.7.9 yutaka)
+	if (SSHv2(pvar)) {
+		pvar->ssh_state.compressing = FALSE;
+		pvar->ssh_state.decompressing = FALSE;
+	}
+
 }
 
 static BOOL handle_enable_compression(PTInstVar pvar)
@@ -1429,22 +1867,29 @@ static BOOL handle_disable_compression(PTInstVar pvar)
 static void prep_compression(PTInstVar pvar)
 {
 	if (pvar->session_settings.CompressionLevel > 0) {
-		static const int msgs[] = { SSH_SMSG_SUCCESS, SSH_SMSG_FAILURE };
-		static const SSHPacketHandler handlers[]
-		= { handle_enable_compression, handle_disable_compression };
+		// added if statement (2005.7.10 yutaka)
+		if (SSHv1(pvar)) {
+			static const int msgs[] = { SSH_SMSG_SUCCESS, SSH_SMSG_FAILURE };
+			static const SSHPacketHandler handlers[]
+			= { handle_enable_compression, handle_disable_compression };
 
-		unsigned char FAR *outmsg =
-			begin_send_packet(pvar, SSH_CMSG_REQUEST_COMPRESSION, 4);
+			unsigned char FAR *outmsg =
+				begin_send_packet(pvar, SSH_CMSG_REQUEST_COMPRESSION, 4);
 
-		set_uint32(outmsg, pvar->session_settings.CompressionLevel);
-		finish_send_packet(pvar);
+			set_uint32(outmsg, pvar->session_settings.CompressionLevel);
+			finish_send_packet(pvar);
+
+			enque_handlers(pvar, 2, msgs, handlers);
+		}
 
 		pvar->ssh_state.compression_level =
 			pvar->session_settings.CompressionLevel;
 
-		enque_handlers(pvar, 2, msgs, handlers);
 	} else {
-		prep_forwarding(pvar);
+		// added if statement (2005.7.10 yutaka)
+		if (SSHv1(pvar)) {
+			prep_forwarding(pvar);
+		}
 	}
 }
 
@@ -1473,7 +1918,13 @@ static BOOL handle_rsa_challenge(PTInstVar pvar)
 
 		if (CRYPT_generate_RSA_challenge_response
 			(pvar, pvar->ssh_state.payload + 2, challenge_bytes, outmsg)) {
-			AUTH_destroy_cur_cred(pvar);
+
+			// セッション複製時にパスワードを使い回したいので、ここでのリソース解放はやめる。
+			// socket close時にもこの関数は呼ばれているので、たぶん問題ない。(2005.4.8 yutaka)
+#if 0
+			//AUTH_destroy_cur_cred(pvar);
+#endif
+
 			finish_send_packet(pvar);
 
 			enque_simple_auth_handlers(pvar);
@@ -1507,6 +1958,10 @@ static void try_send_credentials(PTInstVar pvar)
 		static const SSHPacketHandler TIS_handlers[]
 		= { handle_TIS_challenge, handle_auth_failure };
 
+		// SSH2の場合は以下の処理をスキップ
+		if (SSHv2(pvar)) 
+			goto skip_ssh2;
+
 		switch (cred->method) {
 		case SSH_AUTH_NONE:
 			return;
@@ -1525,7 +1980,13 @@ static void try_send_credentials(PTInstVar pvar)
 				set_uint32(outmsg, obfuscated_len);
 				memcpy(outmsg + 4, cred->password, len);
 				memset(outmsg + 4 + len, 0, obfuscated_len - len);
-				AUTH_destroy_cur_cred(pvar);
+				
+				// セッション複製時にパスワードを使い回したいので、ここでのリソース解放はやめる。
+				// socket close時にもこの関数は呼ばれているので、たぶん問題ない。(2005.4.8 yutaka)
+#if 0
+				//AUTH_destroy_cur_cred(pvar);
+#endif
+				
 				enque_simple_auth_handlers(pvar);
 				break;
 			}
@@ -1593,24 +2054,25 @@ static void try_send_credentials(PTInstVar pvar)
 						begin_send_packet(pvar, SSH_CMSG_AUTH_TIS, 0);
 
 					notify_verbose_message(pvar,
-										   "Trying TIS authentication...",
-										   LOG_LEVEL_VERBOSE);
+										"Trying TIS authentication...",
+										LOG_LEVEL_VERBOSE);
 					enque_handlers(pvar, 2, TIS_msgs, TIS_handlers);
 				} else {
 					int len = strlen(cred->password);
 					int obfuscated_len = obfuscating_round_up(pvar, len);
 					unsigned char FAR *outmsg =
 						begin_send_packet(pvar, SSH_CMSG_AUTH_TIS_RESPONSE,
-										  4 + obfuscated_len);
+										4 + obfuscated_len);
 
 					notify_verbose_message(pvar, "Sending TIS response",
-										   LOG_LEVEL_VERBOSE);
+										LOG_LEVEL_VERBOSE);
 
 					set_uint32(outmsg, obfuscated_len);
 					memcpy(outmsg + 4, cred->password, len);
 					memset(outmsg + 4 + len, 0, obfuscated_len - len);
 					enque_simple_auth_handlers(pvar);
 				}
+
 				AUTH_destroy_cur_cred(pvar);
 				break;
 			}
@@ -1621,6 +2083,8 @@ static void try_send_credentials(PTInstVar pvar)
 		}
 
 		finish_send_packet(pvar);
+
+skip_ssh2:;
 		destroy_packet_buf(pvar);
 
 		pvar->ssh_state.status_flags |= STATUS_DONT_SEND_CREDENTIALS;
@@ -1735,9 +2199,12 @@ void SSH_init(PTInstVar pvar)
 	memset(pvar->ssh2_keys, 0, sizeof(pvar->ssh2_keys));
 	pvar->userauth_success = 0;
 	pvar->session_nego_status = 0;
-//	pvar->settings.ssh_protocol_version = 0;
+	pvar->settings.ssh_protocol_version = 2;  // SSH2(default)
 	pvar->rekeying = 0;
 	pvar->key_done = 0;
+	pvar->ssh2_autologin = 0;  // autologin disabled(default)
+	pvar->userauth_retry_count = 0;
+	pvar->decomp_buffer = NULL;
 
 }
 
@@ -1765,6 +2232,11 @@ void SSH_notify_disconnecting(PTInstVar pvar, char FAR * reason)
 		buffer_t *msg;
 		unsigned char *outmsg;
 		int len;
+		Channel_t *c;
+
+		c = ssh2_channel_lookup(pvar->shell_id);
+		if (c == NULL)
+			return;
 
 		// SSH2 serverにchannel closeを伝える
 		msg = buffer_init();
@@ -1772,7 +2244,7 @@ void SSH_notify_disconnecting(PTInstVar pvar, char FAR * reason)
 			// TODO: error check
 			return;
 		}
-		buffer_put_int(msg, pvar->remote_id);  
+		buffer_put_int(msg, c->remote_id);  
 
 		len = buffer_len(msg);
 		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_CLOSE, len);
@@ -1797,16 +2269,56 @@ void SSH_notify_win_size(PTInstVar pvar, int cols, int rows)
 	pvar->ssh_state.win_cols = cols;
 	pvar->ssh_state.win_rows = rows;
 
-	if (get_handler(pvar, SSH_SMSG_STDOUT_DATA) == handle_data) {
-		unsigned char FAR *outmsg =
-			begin_send_packet(pvar, SSH_CMSG_WINDOW_SIZE, 16);
+	if (SSHv1(pvar)) {
+		if (get_handler(pvar, SSH_SMSG_STDOUT_DATA) == handle_data) {
+			unsigned char FAR *outmsg =
+				begin_send_packet(pvar, SSH_CMSG_WINDOW_SIZE, 16);
 
-		set_uint32(outmsg, rows);
-		set_uint32(outmsg + 4, cols);
-		set_uint32(outmsg + 8, 0);
-		set_uint32(outmsg + 12, 0);
+			set_uint32(outmsg, rows);
+			set_uint32(outmsg + 4, cols);
+			set_uint32(outmsg + 8, 0);
+			set_uint32(outmsg + 12, 0);
+			finish_send_packet(pvar);
+		}
+
+	} else if (SSHv2(pvar)) { // ターミナルサイズ変更通知の追加 (2005.1.4 yutaka)
+		                      // SSH2かどうかのチェックも行う。(2005.1.5 yutaka)
+		buffer_t *msg;
+		char *s;
+		unsigned char *outmsg;
+		int len;
+		Channel_t *c;
+
+		c = ssh2_channel_lookup(pvar->shell_id);
+		if (c == NULL)
+			return;
+
+		msg = buffer_init();
+		if (msg == NULL) {
+			// TODO: error check
+			return;
+		}
+		buffer_put_int(msg, c->remote_id);  
+		s = "window-change";  
+		buffer_put_string(msg, s, strlen(s));  
+		buffer_put_char(msg, 0);  // wantconfirm
+		buffer_put_int(msg, pvar->ssh_state.win_cols);  // columns
+		buffer_put_int(msg, pvar->ssh_state.win_rows);  // lines
+		buffer_put_int(msg, 480);  // XXX:
+		buffer_put_int(msg, 640);  // XXX:
+		len = buffer_len(msg);
+		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_REQUEST, len);
+		memcpy(outmsg, buffer_ptr(msg), len);
 		finish_send_packet(pvar);
+		buffer_free(msg);
+
+		notify_verbose_message(pvar, "SSH2_MSG_CHANNEL_REQUEST was sent at SSH_notify_win_size().", LOG_LEVEL_VERBOSE);
+
+	} else {
+		// SSHでない場合は何もしない。
+
 	}
+
 }
 
 int SSH_get_min_packet_size(PTInstVar pvar)
@@ -1905,13 +2417,27 @@ void SSH_send(PTInstVar pvar, unsigned char const FAR * buf, int buflen)
 		buffer_t *msg;
 		unsigned char *outmsg;
 		int len;
+		Channel_t *c;
+
+		// SSH2鍵交換中の場合、パケットを捨てる。(2005.6.19 yutaka)
+		if (pvar->rekeying) {
+			// TODO: 理想としてはパケット破棄ではなく、パケット読み取り遅延にしたいところだが、
+			// 将来直すことにする。
+			c = NULL;
+
+			return;
+		}
+
+		c = ssh2_channel_lookup(pvar->shell_id);
+		if (c == NULL)
+			return;
 
 		msg = buffer_init();
 		if (msg == NULL) {
 			// TODO: error check
 			return;
 		}
-		buffer_put_int(msg, pvar->remote_id);  
+		buffer_put_int(msg, c->remote_id);  
 		buffer_put_string(msg, (char *)buf, buflen);  
 
 		len = buffer_len(msg);
@@ -1921,7 +2447,7 @@ void SSH_send(PTInstVar pvar, unsigned char const FAR * buf, int buflen)
 		buffer_free(msg);
 
 		// remote window sizeの調整
-		pvar->remote_window -= len;
+		c->remote_window -= len;
 
 	}
 
@@ -1962,7 +2488,8 @@ void SSH_get_compression_info(PTInstVar pvar, char FAR * dest, int len)
 	char buf[1024];
 	char buf2[1024];
 
-	if (pvar->ssh_state.compressing) {
+	// added support of SSH2 packet compression (2005.7.10 yutaka)
+	if (pvar->ssh_state.compressing || pvar->ctos_compression) {
 		unsigned long total_in = pvar->ssh_state.compress_stream.total_in;
 		unsigned long total_out =
 			pvar->ssh_state.compress_stream.total_out;
@@ -1981,7 +2508,7 @@ void SSH_get_compression_info(PTInstVar pvar, char FAR * dest, int len)
 	}
 	buf[sizeof(buf) - 1] = 0;
 
-	if (pvar->ssh_state.decompressing) {
+	if (pvar->ssh_state.decompressing || pvar->stoc_compression) {
 		unsigned long total_in =
 			pvar->ssh_state.decompress_stream.total_in;
 		unsigned long total_out =
@@ -2055,111 +2582,324 @@ void SSH_end(PTInstVar pvar)
 	buf_destroy(&pvar->ssh_state.postdecompress_inbuf,
 				&pvar->ssh_state.postdecompress_inbuflen);
 
-	if (pvar->ssh_state.compressing) {
+	if (pvar->ssh_state.compressing || pvar->ctos_compression) { // add SSH2 flag (2005.7.10 yutaka)
 		deflateEnd(&pvar->ssh_state.compress_stream);
 		pvar->ssh_state.compressing = FALSE;
 	}
-	if (pvar->ssh_state.decompressing) {
+	if (pvar->ssh_state.decompressing || pvar->stoc_compression) { // add SSH2 flag (2005.7.10 yutaka)
 		inflateEnd(&pvar->ssh_state.decompress_stream);
 		pvar->ssh_state.decompressing = FALSE;
 	}
+
+#if 1
+	// SSH2のデータを解放する (2004.12.27 yutaka)
+	if (SSHv2(pvar)) {
+		if (pvar->kexdh) {
+			DH_free(pvar->kexdh);
+			pvar->kexdh = NULL;
+		}
+		memset(pvar->server_version_string, 0, sizeof(pvar->server_version_string));
+		memset(pvar->client_version_string, 0, sizeof(pvar->client_version_string));
+
+		if (pvar->my_kex != NULL) {
+			buffer_free(pvar->my_kex);
+			pvar->my_kex = NULL;
+		}
+		if (pvar->peer_kex != NULL) {
+			buffer_free(pvar->peer_kex);
+			pvar->peer_kex = NULL;
+		}
+
+		pvar->we_need = 0;
+		pvar->key_done = 0;
+		pvar->rekeying = 0;
+
+		if (pvar->session_id != NULL) {
+			free(pvar->session_id);
+			pvar->session_id = NULL;
+		}
+		pvar->session_id_len = 0;
+
+		pvar->userauth_success = 0;
+		//pvar->remote_id = 0;
+		pvar->shell_id = 0;
+		pvar->session_nego_status = 0;
+
+		pvar->ssh_heartbeat_tick = 0;
+
+		if (pvar->decomp_buffer != NULL) {
+			buffer_free(pvar->decomp_buffer);
+			pvar->decomp_buffer = NULL;
+		}
+	}
+#endif
+
 }
 
 /* support for port forwarding */
-void SSH_channel_send(PTInstVar pvar, uint32 remote_channel_num,
+void SSH_channel_send(PTInstVar pvar, int channel_num,
+					  uint32 remote_channel_num,
 					  unsigned char FAR * buf, int len)
 {
-	unsigned char FAR *outmsg =
-		begin_send_packet(pvar, SSH_MSG_CHANNEL_DATA, 8 + len);
+	int buflen = len;
 
-	set_uint32(outmsg, remote_channel_num);
-	set_uint32(outmsg + 4, len);
+	if (SSHv1(pvar)) {
+		unsigned char FAR *outmsg =
+			begin_send_packet(pvar, SSH_MSG_CHANNEL_DATA, 8 + len);
 
-	if (pvar->ssh_state.compressing) {
-		buf_ensure_size(&pvar->ssh_state.outbuf,
-						&pvar->ssh_state.outbuflen, len + (len >> 6) + 50);
-		pvar->ssh_state.compress_stream.next_in =
-			pvar->ssh_state.precompress_outbuf;
-		pvar->ssh_state.compress_stream.avail_in = 9;
-		pvar->ssh_state.compress_stream.next_out =
-			pvar->ssh_state.outbuf + 12;
-		pvar->ssh_state.compress_stream.avail_out =
-			pvar->ssh_state.outbuflen - 12;
+		set_uint32(outmsg, remote_channel_num);
+		set_uint32(outmsg + 4, len);
 
-		if (deflate(&pvar->ssh_state.compress_stream, Z_NO_FLUSH) != Z_OK) {
-			notify_fatal_error(pvar, "Error compressing packet data");
-			return;
+		if (pvar->ssh_state.compressing) {
+			buf_ensure_size(&pvar->ssh_state.outbuf,
+							&pvar->ssh_state.outbuflen, len + (len >> 6) + 50);
+			pvar->ssh_state.compress_stream.next_in =
+				pvar->ssh_state.precompress_outbuf;
+			pvar->ssh_state.compress_stream.avail_in = 9;
+			pvar->ssh_state.compress_stream.next_out =
+				pvar->ssh_state.outbuf + 12;
+			pvar->ssh_state.compress_stream.avail_out =
+				pvar->ssh_state.outbuflen - 12;
+
+			if (deflate(&pvar->ssh_state.compress_stream, Z_NO_FLUSH) != Z_OK) {
+				notify_fatal_error(pvar, "Error compressing packet data");
+				return;
+			}
+
+			pvar->ssh_state.compress_stream.next_in =
+				(unsigned char FAR *) buf;
+			pvar->ssh_state.compress_stream.avail_in = len;
+
+			if (deflate(&pvar->ssh_state.compress_stream, Z_SYNC_FLUSH) !=
+				Z_OK) {
+				notify_fatal_error(pvar, "Error compressing packet data");
+				return;
+			}
+		} else {
+			memcpy(outmsg + 8, buf, len);
 		}
 
-		pvar->ssh_state.compress_stream.next_in =
-			(unsigned char FAR *) buf;
-		pvar->ssh_state.compress_stream.avail_in = len;
+		finish_send_packet_special(pvar, 1);
 
-		if (deflate(&pvar->ssh_state.compress_stream, Z_SYNC_FLUSH) !=
-			Z_OK) {
-			notify_fatal_error(pvar, "Error compressing packet data");
-			return;
-		}
 	} else {
-		memcpy(outmsg + 8, buf, len);
+		// ポートフォワーディングにおいてクライアントからの送信要求を、SSH通信に乗せてサーバまで送り届ける。
+		buffer_t *msg;
+		unsigned char *outmsg;
+		int len;
+		Channel_t *c;
+
+		// SSH2鍵交換中の場合、パケットを捨てる。(2005.6.19 yutaka)
+		if (pvar->rekeying) {
+			// TODO: 理想としてはパケット破棄ではなく、パケット読み取り遅延にしたいところだが、
+			// 将来直すことにする。
+			c = NULL;
+
+			return;
+		}
+
+		c = ssh2_local_channel_lookup(channel_num);
+		if (c == NULL)
+			return;
+
+		msg = buffer_init();
+		if (msg == NULL) {
+			// TODO: error check
+			return;
+		}
+		buffer_put_int(msg, c->remote_id);  
+		buffer_put_string(msg, (char *)buf, buflen);  
+
+		len = buffer_len(msg);
+		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_DATA, len);
+		memcpy(outmsg, buffer_ptr(msg), len);
+		finish_send_packet(pvar);
+		buffer_free(msg);
+
+		// remote window sizeの調整
+		c->remote_window -= len;
 	}
 
-	finish_send_packet_special(pvar, 1);
 }
 
 void SSH_fail_channel_open(PTInstVar pvar, uint32 remote_channel_num)
 {
-	unsigned char FAR *outmsg =
-		begin_send_packet(pvar, SSH_MSG_CHANNEL_OPEN_FAILURE, 4);
+	if (SSHv1(pvar)) {
+		unsigned char FAR *outmsg =
+			begin_send_packet(pvar, SSH_MSG_CHANNEL_OPEN_FAILURE, 4);
 
-	set_uint32(outmsg, remote_channel_num);
-	finish_send_packet(pvar);
+		set_uint32(outmsg, remote_channel_num);
+		finish_send_packet(pvar);
+
+	} else { // SSH2 (2005.6.26 yutaka)
+		int len;
+		Channel_t *c = NULL;
+		buffer_t *msg;
+		unsigned char *outmsg;
+
+		msg = buffer_init();
+		if (msg == NULL) {
+			// TODO: error check
+			return;
+		}
+		buffer_put_int(msg, remote_channel_num);  
+		buffer_put_int(msg, SSH2_OPEN_ADMINISTRATIVELY_PROHIBITED);  
+
+		len = buffer_len(msg);
+		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_OPEN_FAILURE, len);
+		memcpy(outmsg, buffer_ptr(msg), len);
+		finish_send_packet(pvar);
+		buffer_free(msg);
+
+	}
 }
 
 void SSH_confirm_channel_open(PTInstVar pvar, uint32 remote_channel_num,
 							  uint32 local_channel_num)
 {
-	unsigned char FAR *outmsg =
-		begin_send_packet(pvar, SSH_MSG_CHANNEL_OPEN_CONFIRMATION, 8);
+	if (SSHv1(pvar)) {
+		unsigned char FAR *outmsg =
+			begin_send_packet(pvar, SSH_MSG_CHANNEL_OPEN_CONFIRMATION, 8);
 
-	set_uint32(outmsg, remote_channel_num);
-	set_uint32(outmsg + 4, local_channel_num);
-	finish_send_packet(pvar);
+		set_uint32(outmsg, remote_channel_num);
+		set_uint32(outmsg + 4, local_channel_num);
+		finish_send_packet(pvar);
+
+	} else {
+		buffer_t *msg;
+		unsigned char *outmsg;
+		int len;
+		Channel_t *c;
+
+		// port-forwarding(remote to local)のローカル接続への成功をサーバへ返す。(2005.7.2 yutaka)
+		c = ssh2_local_channel_lookup(local_channel_num);
+		if (c == NULL) {
+			// It is sure to be successful as long as it's not a program bug either.
+			return;
+		}
+
+		msg = buffer_init();
+		if (msg == NULL) {
+			// TODO: error check
+			return;
+		}
+		buffer_put_int(msg, c->remote_id);  
+		buffer_put_int(msg, c->self_id);  
+		buffer_put_int(msg, c->local_window);  
+		buffer_put_int(msg, c->local_maxpacket);  
+
+		len = buffer_len(msg);
+		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_OPEN_CONFIRMATION, len);
+		memcpy(outmsg, buffer_ptr(msg), len);
+		finish_send_packet(pvar);
+		buffer_free(msg);
+
+	}
 }
 
 void SSH_channel_output_eof(PTInstVar pvar, uint32 remote_channel_num)
 {
-	unsigned char FAR *outmsg =
-		begin_send_packet(pvar, SSH_MSG_CHANNEL_OUTPUT_CLOSED, 4);
+	if (SSHv1(pvar)){
+		unsigned char FAR *outmsg =
+			begin_send_packet(pvar, SSH_MSG_CHANNEL_OUTPUT_CLOSED, 4);
 
-	set_uint32(outmsg, remote_channel_num);
-	finish_send_packet(pvar);
+		set_uint32(outmsg, remote_channel_num);
+		finish_send_packet(pvar);
+
+	} else {
+		// SSH2: 特になし。
+
+	}
 }
 
-void SSH_channel_input_eof(PTInstVar pvar, uint32 remote_channel_num)
+void SSH_channel_input_eof(PTInstVar pvar, uint32 remote_channel_num, uint32 local_channel_num)
 {
-	unsigned char FAR *outmsg =
-		begin_send_packet(pvar, SSH_MSG_CHANNEL_INPUT_EOF, 4);
+	if (SSHv1(pvar)){
+		unsigned char FAR *outmsg =
+			begin_send_packet(pvar, SSH_MSG_CHANNEL_INPUT_EOF, 4);
 
-	set_uint32(outmsg, remote_channel_num);
-	finish_send_packet(pvar);
+		set_uint32(outmsg, remote_channel_num);
+		finish_send_packet(pvar);
+
+	} else {
+		// SSH2: チャネルクローズをサーバへ通知
+			buffer_t *msg;
+			unsigned char *outmsg;
+			int len;
+			Channel_t *c;
+
+			// SSH2鍵交換中の場合、パケットを捨てる。(2005.6.21 yutaka)
+			if (pvar->rekeying) {
+				// TODO: 理想としてはパケット破棄ではなく、パケット読み取り遅延にしたいところだが、
+				// 将来直すことにする。
+				c = NULL;
+
+				return;
+			}
+
+			c = ssh2_local_channel_lookup(local_channel_num);
+			if (c == NULL)
+				return;
+
+			msg = buffer_init();
+			if (msg == NULL) {
+				// TODO: error check
+				return;
+			}
+			buffer_put_int(msg, c->remote_id);  // remote ID
+
+			len = buffer_len(msg);
+			outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_EOF, len);
+			memcpy(outmsg, buffer_ptr(msg), len);
+			finish_send_packet(pvar);
+			buffer_free(msg);
+	}
+
 }
 
 void SSH_request_forwarding(PTInstVar pvar, int from_server_port,
 							char FAR * to_local_host, int to_local_port)
 {
-	int host_len = strlen(to_local_host);
-	unsigned char FAR *outmsg =
-		begin_send_packet(pvar, SSH_CMSG_PORT_FORWARD_REQUEST,
-						  12 + host_len);
+	if (SSHv1(pvar)) {
+		int host_len = strlen(to_local_host);
+		unsigned char FAR *outmsg =
+			begin_send_packet(pvar, SSH_CMSG_PORT_FORWARD_REQUEST,
+							12 + host_len);
 
-	set_uint32(outmsg, from_server_port);
-	set_uint32(outmsg + 4, host_len);
-	memcpy(outmsg + 8, to_local_host, host_len);
-	set_uint32(outmsg + 8 + host_len, to_local_port);
-	finish_send_packet(pvar);
+		set_uint32(outmsg, from_server_port);
+		set_uint32(outmsg + 4, host_len);
+		memcpy(outmsg + 8, to_local_host, host_len);
+		set_uint32(outmsg + 8 + host_len, to_local_port);
+		finish_send_packet(pvar);
 
-	enque_forwarding_request_handlers(pvar);
+		enque_forwarding_request_handlers(pvar);
+
+	} else {
+		// SSH2 port-forwading remote to local (2005.6.21 yutaka)
+		buffer_t *msg;
+		char *s;
+		unsigned char *outmsg;
+		int len;
+
+		msg = buffer_init();
+		if (msg == NULL) {
+			// TODO: error check
+			return;
+		}
+		s = "tcpip-forward";
+		buffer_put_string(msg, s, strlen(s)); // ctype
+		buffer_put_char(msg, 1);  // want reply
+		s = "0.0.0.0";
+		buffer_put_string(msg, s, strlen(s)); 
+
+		buffer_put_int(msg, from_server_port);  // listening port
+
+		len = buffer_len(msg);
+		outmsg = begin_send_packet(pvar, SSH2_MSG_GLOBAL_REQUEST, len);
+		memcpy(outmsg, buffer_ptr(msg), len);
+		finish_send_packet(pvar);
+		buffer_free(msg);
+
+	}
 }
 
 void SSH_request_X11_forwarding(PTInstVar pvar,
@@ -2167,31 +2907,86 @@ void SSH_request_X11_forwarding(PTInstVar pvar,
 								unsigned char FAR * auth_data,
 								int auth_data_len, int screen_num)
 {
-	int protocol_len = strlen(auth_protocol);
-	int data_len = auth_data_len * 2;
-	unsigned char FAR *outmsg =
-		begin_send_packet(pvar, SSH_CMSG_X11_REQUEST_FORWARDING,
-						  12 + protocol_len + data_len);
-	int i;
-	char FAR *auth_data_ptr;
+	if (SSHv1(pvar)) {
+		int protocol_len = strlen(auth_protocol);
+		int data_len = auth_data_len * 2;
+		unsigned char FAR *outmsg =
+			begin_send_packet(pvar, SSH_CMSG_X11_REQUEST_FORWARDING,
+							12 + protocol_len + data_len);
+		int i;
+		char FAR *auth_data_ptr;
 
-	set_uint32(outmsg, protocol_len);
-	memcpy(outmsg + 4, auth_protocol, protocol_len);
-	set_uint32(outmsg + 4 + protocol_len, data_len);
-	auth_data_ptr = outmsg + 8 + protocol_len;
-	for (i = 0; i < auth_data_len; i++) {
-		sprintf(auth_data_ptr + i * 2, "%.2x", auth_data[i]);
+		set_uint32(outmsg, protocol_len);
+		memcpy(outmsg + 4, auth_protocol, protocol_len);
+		set_uint32(outmsg + 4 + protocol_len, data_len);
+		auth_data_ptr = outmsg + 8 + protocol_len;
+		for (i = 0; i < auth_data_len; i++) {
+			sprintf(auth_data_ptr + i * 2, "%.2x", auth_data[i]);
+		}
+		set_uint32(outmsg + 8 + protocol_len + data_len, screen_num);
+
+		finish_send_packet(pvar);
+
+		enque_forwarding_request_handlers(pvar);
+
+	} else {
+		// SSH2: X11 port-forwarding (2005.7.2 yutaka)
+		buffer_t *msg;
+		char *s;
+		unsigned char *outmsg;
+		int len;
+		Channel_t *c;
+		int newlen;
+		char *newdata;
+		int i;
+
+		msg = buffer_init();
+		if (msg == NULL) {
+			// TODO: error check
+			return;
+		}
+
+		c = ssh2_channel_lookup(pvar->shell_id);
+		if (c == NULL) 
+			return;
+
+		// making the fake data	
+		newlen = 2 * auth_data_len + 1;
+		newdata = malloc(newlen);
+		if (newdata == NULL)
+			return;
+		for (i = 0 ; i < auth_data_len ; i++) {
+			_snprintf(newdata + i*2, newlen - i*2, "%02x", auth_data[i]);
+		}
+		newdata[newlen - 1] = '\0';
+
+		buffer_put_int(msg, c->remote_id);  
+		s = "x11-req";
+		buffer_put_string(msg, s, strlen(s)); // service name
+		buffer_put_char(msg, 0);  // want confirm (false)
+		buffer_put_char(msg, 0);  // XXX bool single connection
+
+		s = auth_protocol; // MIT-MAGIC-COOKIE-1
+		buffer_put_string(msg, s, strlen(s)); 
+		s = newdata;
+		buffer_put_string(msg, s, strlen(s)); 
+
+		buffer_put_int(msg, screen_num);  
+
+		len = buffer_len(msg);
+		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_REQUEST, len);
+		memcpy(outmsg, buffer_ptr(msg), len);
+		finish_send_packet(pvar);
+		buffer_free(msg);
+
+		free(newdata);
 	}
-	set_uint32(outmsg + 8 + protocol_len + data_len, screen_num);
 
-	finish_send_packet(pvar);
-
-	enque_forwarding_request_handlers(pvar);
 }
 
 void SSH_open_channel(PTInstVar pvar, uint32 local_channel_num,
 					  char FAR * to_remote_host, int to_remote_port,
-					  char FAR * originator)
+					  char FAR * originator, unsigned short originator_port)
 {
 	static const int msgs[]
 	= { SSH_MSG_CHANNEL_OPEN_CONFIRMATION, SSH_MSG_CHANNEL_OPEN_FAILURE };
@@ -2214,19 +3009,73 @@ void SSH_open_channel(PTInstVar pvar, uint32 local_channel_num,
 		set_uint32(outmsg + 12 + host_len, originator_len);
 		memcpy(outmsg + 16 + host_len, originator, originator_len);
 	} else {
-		unsigned char FAR *outmsg =
-			begin_send_packet(pvar, SSH_MSG_PORT_OPEN,
-							  12 + host_len);
 
-		set_uint32(outmsg, local_channel_num);
-		set_uint32(outmsg + 4, host_len);
-		memcpy(outmsg + 8, to_remote_host, host_len);
-		set_uint32(outmsg + 8 + host_len, to_remote_port);
+		if (SSHv1(pvar)) {
+			unsigned char FAR *outmsg =
+				begin_send_packet(pvar, SSH_MSG_PORT_OPEN,
+								12 + host_len);
+
+			set_uint32(outmsg, local_channel_num);
+			set_uint32(outmsg + 4, host_len);
+			memcpy(outmsg + 8, to_remote_host, host_len);
+			set_uint32(outmsg + 8 + host_len, to_remote_port);
+
+		} else {
+			// SSH2 port-fowarding (2005.2.26 yutaka)
+			buffer_t *msg;
+			char *s;
+			unsigned char *outmsg;
+			int len;
+			Channel_t *c;
+
+			// SSH2鍵交換中の場合、パケットを捨てる。(2005.6.21 yutaka)
+			if (pvar->rekeying) {
+				// TODO: 理想としてはパケット破棄ではなく、パケット読み取り遅延にしたいところだが、
+				// 将来直すことにする。
+				c = NULL;
+
+				return;
+			}
+
+			c = ssh2_channel_new(CHAN_TCP_WINDOW_DEFAULT, CHAN_TCP_PACKET_DEFAULT, TYPE_PORTFWD, local_channel_num);
+
+			msg = buffer_init();
+			if (msg == NULL) {
+				// TODO: error check
+				return;
+			}
+			s = "direct-tcpip";
+			buffer_put_string(msg, s, strlen(s)); // ctype
+			buffer_put_int(msg, c->self_id);  // self
+			buffer_put_int(msg, c->local_window);  // local_window
+			buffer_put_int(msg, c->local_maxpacket);  // local_maxpacket
+
+			s = to_remote_host;
+			buffer_put_string(msg, s, strlen(s)); // target host
+			buffer_put_int(msg, to_remote_port);  // target port
+
+			s = originator;
+			buffer_put_string(msg, s, strlen(s)); // originator host
+			buffer_put_int(msg, originator_port);  // originator port
+
+			len = buffer_len(msg);
+			outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_OPEN, len);
+			memcpy(outmsg, buffer_ptr(msg), len);
+			finish_send_packet(pvar);
+			buffer_free(msg);
+
+			return;
+
+			/* NOT REACHED */
+		}
+
 	}
 
-	finish_send_packet(pvar);
+	if (SSHv1(pvar)) { // SSH1のみ
+		finish_send_packet(pvar);
+		enque_handlers(pvar, 2, msgs, handlers);
+	}
 
-	enque_handlers(pvar, 2, msgs, handlers);
 }
 
 
@@ -2263,23 +3112,27 @@ static char *myproposal[PROPOSAL_MAX] = {
 	"ssh-dss,ssh-rsa",
 	"3des-cbc,aes128-cbc",
 	"3des-cbc,aes128-cbc",
-	"hmac-sha1",
-	"hmac-sha1",
-	"none",
-	"none",
+	"hmac-md5,hmac-sha1",
+	"hmac-md5,hmac-sha1",
+//	"hmac-sha1,hmac-md5",
+//	"hmac-sha1,hmac-md5",
+//	"hmac-sha1",
+//	"hmac-sha1",
+	"none,zlib",
+	"none,zlib",
 	"",
 	"",
 };
 #else
 static char *myproposal[PROPOSAL_MAX] = {
-	"diffie-hellman-group14-sha1,diffie-hellman-group1-sha1,diffie-hellman-group-exchange-sha1",
+	"diffie-hellman-group-exchange-sha1,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1",
 	"ssh-rsa,ssh-dss",
 	"3des-cbc,aes128-cbc",
 	"3des-cbc,aes128-cbc",
-	"hmac-sha1",
-	"hmac-sha1",
-	"none",
-	"none",
+	"hmac-sha1,hmac-md5",
+	"hmac-sha1,hmac-md5",
+	"none,zlib",
+	"none,zlib",
 	"",
 	"",
 };
@@ -2319,6 +3172,10 @@ static Newkeys current_keys[MODE_MAX];
 #define write_buffer_file(buf,len) do_write_buffer_file(buf,len,__FILE__,__LINE__)
 
 
+//
+// general
+//
+
 static int get_cipher_block_size(SSHCipher cipher) 
 {
 	ssh2_cipher_t *ptr = ssh2_ciphers;
@@ -2350,6 +3207,7 @@ static int get_cipher_key_len(SSHCipher cipher)
 }
 
 
+#if 0
 static int get_mac_index(char *name) 
 {
 	ssh2_mac_t *ptr = ssh2_macs;
@@ -2364,6 +3222,7 @@ static int get_mac_index(char *name)
 	}
 	return (val);
 }
+#endif
 
 
 static void do_write_buffer_file(void *buf, int len, char *file, int lineno)
@@ -2424,6 +3283,22 @@ void SSH2_update_cipher_myproposal(PTInstVar pvar)
 }
 
 
+void SSH2_update_compression_myproposal(PTInstVar pvar)
+{
+	static char buf[128]; // TODO: malloc()にすべき
+
+	// 圧縮レベルに応じて、myproposal[]を書き換える。(2005.7.9 yutaka)
+	buf[0] = '\0';
+	if (pvar->ts_SSH->CompressionLevel > 0) {
+		_snprintf(buf, sizeof(buf), "zlib,none");
+	}
+	if (buf[0] != '\0') {
+		myproposal[PROPOSAL_COMP_ALGS_CTOS] = buf;  // Client To Server
+		myproposal[PROPOSAL_COMP_ALGS_STOC] = buf;  // Server To Client
+	}
+}
+
+
 // クライアントからサーバへのキー交換開始要求
 void SSH2_send_kexinit(PTInstVar pvar)
 {
@@ -2461,7 +3336,10 @@ void SSH2_send_kexinit(PTInstVar pvar)
 	memcpy(outmsg, buffer_ptr(msg), len);
 	finish_send_packet(pvar);
 
+	// my_kexに取っておくため、フリーしてはいけない。
 	//buffer_free(msg);
+
+	notify_verbose_message(pvar, "SSH2_MSG_KEXINIT was sent", LOG_LEVEL_VERBOSE);
 }
 
 
@@ -2490,11 +3368,57 @@ static SSHCipher choose_SSH2_cipher_algorithm(char *server_proposal, char *my_pr
 }
 
 
+static enum hmac_type choose_SSH2_hmac_algorithm(char *server_proposal, char *my_proposal)
+{
+	char tmp[1024], *ptr;
+	enum hmac_type type = HMAC_UNKNOWN;
+
+	_snprintf(tmp, sizeof(tmp), my_proposal);
+	ptr = strtok(tmp, ","); // not thread-safe
+	while (ptr != NULL) {
+		// server_proposalにはサーバのproposalがカンマ文字列で格納されている
+		if (strstr(server_proposal, ptr)) { // match
+			break;
+		}
+		ptr = strtok(NULL, ",");
+	}
+	if (strstr(ptr, "hmac-sha1")) {
+		type = HMAC_SHA1;
+	} else if (strstr(ptr, "hmac-md5")) {
+		type = HMAC_MD5;
+	}
+
+	return (type);
+}
+
+
+static int choose_SSH2_compression_algorithm(char *server_proposal, char *my_proposal)
+{
+	char tmp[1024], *ptr;
+	int ret = -1;
+
+	_snprintf(tmp, sizeof(tmp), my_proposal);
+	ptr = strtok(tmp, ","); // not thread-safe
+	while (ptr != NULL) {
+		// server_proposalにはサーバのproposalがカンマ文字列で格納されている
+		if (strstr(server_proposal, ptr)) { // match
+			break;
+		}
+		ptr = strtok(NULL, ",");
+	}
+	if (strstr(ptr, "zlib")) {
+		ret = 1; // packet compression enabled
+	} else if (strstr(ptr, "none")) {
+		ret = 0; // packet compression disabled
+	}
+
+	return (ret);
+}
+
 // 暗号アルゴリズムのキーサイズ、ブロックサイズ、MACサイズのうち最大値(we_need)を決定する。
 static void choose_SSH2_key_maxlength(PTInstVar pvar)
 {
 	int mode, need, val, ctos;
-	char *macname;
 	const EVP_MD *md;
 
 	for (mode = 0; mode < MODE_MAX; mode++) {
@@ -2502,10 +3426,11 @@ static void choose_SSH2_key_maxlength(PTInstVar pvar)
 			ctos = 1;
 		else
 			ctos = 0;
-		macname = myproposal[PROPOSAL_MAC_ALGS_CTOS + ctos];
-		val = get_mac_index(macname);
-		if (val == -1) {
-			goto error;
+
+		if (ctos == 1) {
+			val = pvar->ctos_hmac;
+		} else {
+			val = pvar->stoc_hmac;
 		}
 
 		// current_keys[]に設定しておいて、あとで pvar->ssh2_keys[] へコピーする。
@@ -2525,9 +3450,11 @@ static void choose_SSH2_key_maxlength(PTInstVar pvar)
 			current_keys[mode].enc.block_size = get_cipher_block_size(pvar->stoc_cipher);
 		}
 		current_keys[mode].mac.enabled = 0;
+		current_keys[mode].comp.enabled = 0; // (2005.7.9 yutaka)
 
 		// 現時点ではMACはdisable
 		pvar->ssh2_keys[mode].mac.enabled = 0;
+		pvar->ssh2_keys[mode].comp.enabled = 0; // (2005.7.9 yutaka)
 	}
 	need = 0;
 	for (mode = 0; mode < MODE_MAX; mode++) {
@@ -2550,7 +3477,6 @@ static void choose_SSH2_key_maxlength(PTInstVar pvar)
 	}
 	pvar->we_need = need;
 
-error:;
 }
 
 
@@ -2565,6 +3491,8 @@ static BOOL handle_SSH2_kexinit(PTInstVar pvar)
 	char *msg = NULL;
 	char tmp[1024+512];
 	char *ptr;
+
+	notify_verbose_message(pvar, "SSH2_MSG_KEXINIT is receiving", LOG_LEVEL_VERBOSE);
 
 	// すでにキー交換が終わっているにも関わらず、サーバから SSH2_MSG_KEXINIT が
 	// 送られてくる場合は、キー再作成を行う。(2004.10.24 yutaka)
@@ -2599,6 +3527,7 @@ static BOOL handle_SSH2_kexinit(PTInstVar pvar)
 	len = pvar->ssh_state.payloadlen;
 
 	//write_buffer_file(data, len);
+	push_memdump("KEXINIT", "アルゴリズムリストの交換", data, len);
 
 	if (offset + 20 >= len) {
 		msg = "payload size too small @ handle_SSH2_kexinit()";
@@ -2727,6 +3656,73 @@ static BOOL handle_SSH2_kexinit(PTInstVar pvar)
 		msg = tmp;
 		goto error;
 	}
+
+
+	// HMAC(Hash Message Authentication Code)アルゴリズムの決定 (2004.12.17 yutaka)
+	size = get_payload_uint32(pvar, offset);
+	offset += 4;
+	for (i = 0; i < size; i++) {
+		buf[i] = data[offset + i];
+	}
+	buf[i] = 0;
+	offset += size;
+	pvar->ctos_hmac = choose_SSH2_hmac_algorithm(buf, myproposal[PROPOSAL_MAC_ALGS_CTOS]);
+	if (pvar->ctos_hmac == HMAC_UNKNOWN) { // not match
+		strcpy(tmp, "unknown HMAC algorithm: ");
+		strcat(tmp, buf);
+		msg = tmp;
+		goto error;
+	}
+
+	size = get_payload_uint32(pvar, offset);
+	offset += 4;
+	for (i = 0; i < size; i++) {
+		buf[i] = data[offset + i];
+	}
+	buf[i] = 0;
+	offset += size;
+	pvar->stoc_hmac = choose_SSH2_hmac_algorithm(buf, myproposal[PROPOSAL_MAC_ALGS_STOC]);
+	if (pvar->ctos_hmac == HMAC_UNKNOWN) { // not match
+		strcpy(tmp, "unknown HMAC algorithm: ");
+		strcat(tmp, buf);
+		msg = tmp;
+		goto error;
+	}
+
+
+	// 圧縮アルゴリズムの決定 
+	// pvar->ssh_state.compressing = FALSE; として下記メンバを使用する。
+	// (2005.7.9 yutaka)
+	size = get_payload_uint32(pvar, offset);
+	offset += 4;
+	for (i = 0; i < size; i++) {
+		buf[i] = data[offset + i];
+	}
+	buf[i] = 0;
+	offset += size;
+	pvar->ctos_compression = choose_SSH2_compression_algorithm(buf, myproposal[PROPOSAL_COMP_ALGS_CTOS]);
+	if (pvar->ctos_compression == -1) { // not match
+		strcpy(tmp, "unknown Packet Compression algorithm: ");
+		strcat(tmp, buf);
+		msg = tmp;
+		goto error;
+	}
+
+	size = get_payload_uint32(pvar, offset);
+	offset += 4;
+	for (i = 0; i < size; i++) {
+		buf[i] = data[offset + i];
+	}
+	buf[i] = 0;
+	offset += size;
+	pvar->stoc_compression = choose_SSH2_compression_algorithm(buf, myproposal[PROPOSAL_COMP_ALGS_STOC]);
+	if (pvar->stoc_compression == -1) { // not match
+		strcpy(tmp, "unknown Packet Compression algorithm: ");
+		strcat(tmp, buf);
+		msg = tmp;
+		goto error;
+	}
+
 
 	// we_needの決定 (2004.11.6 yutaka)
 	// キー再作成の場合はスキップする。
@@ -2898,8 +3894,12 @@ static void SSH2_dh_kex_init(PTInstVar pvar)
 
 	SSH2_dispatch_init(2);
 	SSH2_dispatch_add_message(SSH2_MSG_KEXDH_REPLY);
+	SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX: Tru64 UNIX workaround   (2005.3.5 yutaka)
 
 	buffer_free(msg);
+
+	notify_verbose_message(pvar, "SSH2_MSG_KEXDH_INIT was sent", LOG_LEVEL_VERBOSE);
+
 	return;
 
 error:;
@@ -2958,10 +3958,21 @@ static void SSH2_dh_gex_kex_init(PTInstVar pvar)
 	pvar->kexgex_bits = bits;
 	pvar->kexgex_max = max;
 
+	{
+		char tmp[128];
+		_snprintf(tmp, sizeof(tmp), "we_need %d min %d bits %d max %d", 
+			pvar->we_need, min, bits, max);
+		push_memdump("DH_GEX_REQUEST", "requested key bits", tmp, strlen(tmp));
+	}
+
 	SSH2_dispatch_init(2);
 	SSH2_dispatch_add_message(SSH2_MSG_KEX_DH_GEX_GROUP);
+	SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX: Tru64 UNIX workaround   (2005.3.5 yutaka)
 
 	buffer_free(msg);
+
+	notify_verbose_message(pvar, "SSH2_MSG_KEX_DH_GEX_REQUEST was sent", LOG_LEVEL_VERBOSE);
+
 	return;
 
 error:;
@@ -3017,8 +4028,15 @@ static BOOL handle_SSH2_dh_gex_group(PTInstVar pvar)
 	// ここで作成したDH鍵は、あとでハッシュ計算に使うため取っておく。(2004.10.31 yutaka)
 	pvar->kexdh = dh;
 
+	{
+		push_bignum_memdump("DH_GEX_GROUP", "p", dh->p);
+		push_bignum_memdump("DH_GEX_GROUP", "g", dh->g);
+		push_bignum_memdump("DH_GEX_GROUP", "pub_key", dh->pub_key);
+	}
+
 	SSH2_dispatch_init(2);
 	SSH2_dispatch_add_message(SSH2_MSG_KEX_DH_GEX_REPLY);
+	SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX: Tru64 UNIX workaround   (2005.3.5 yutaka)
 
 	buffer_free(msg);
 
@@ -3153,13 +4171,18 @@ skip:;
 
 static void ssh2_set_newkeys(PTInstVar pvar, int mode)
 {
+#if 1
 	// free already allocated buffer
-	if (pvar->ssh2_keys[mode].enc.iv != NULL)
+	if (pvar->ssh2_keys[mode].enc.iv != NULL) {
 		free(pvar->ssh2_keys[mode].enc.iv);
-	if (pvar->ssh2_keys[mode].enc.key != NULL)
+	}
+	if (pvar->ssh2_keys[mode].enc.key != NULL) {
 		free(pvar->ssh2_keys[mode].enc.key);
-	if (pvar->ssh2_keys[mode].mac.key != NULL)
+	}
+	if (pvar->ssh2_keys[mode].mac.key != NULL) {
 		free(pvar->ssh2_keys[mode].mac.key);
+	}
+#endif
 
 	pvar->ssh2_keys[mode] = current_keys[mode];
 }
@@ -3182,6 +4205,17 @@ void kex_derive_keys(PTInstVar pvar, int need, u_char *hash, BIGNUM *shared_secr
 		else
 			ctos = 0;
 
+#if 0
+		// free already allocated buffer (2004.12.27 yutaka)
+		// キー再作成時にMAC corruptとなるので削除。(2005.1.5 yutaka)
+		if (current_keys[mode].enc.iv != NULL)
+			free(current_keys[mode].enc.iv);
+		if (current_keys[mode].enc.key != NULL)
+			free(current_keys[mode].enc.key);
+		if (current_keys[mode].mac.key != NULL)
+			free(current_keys[mode].mac.key);
+#endif
+
 		// setting
 		current_keys[mode].enc.iv  = keys[ctos ? 0 : 1];
 		current_keys[mode].enc.key = keys[ctos ? 2 : 3];
@@ -3194,40 +4228,114 @@ void kex_derive_keys(PTInstVar pvar, int need, u_char *hash, BIGNUM *shared_secr
 }
 
 
+//////////////////////////////////////////////////////////////////////////////
+//
+// Key verify function
+// 
+//////////////////////////////////////////////////////////////////////////////
+
+//
+// DSS
+// 
+
+static int ssh_dss_verify(
+			DSA *key, u_char *signature, u_int signaturelen,
+			u_char *data, u_int datalen)
+{
+	DSA_SIG *sig;
+	const EVP_MD *evp_md = EVP_sha1();
+	EVP_MD_CTX md;
+	unsigned char digest[EVP_MAX_MD_SIZE], *sigblob;
+	unsigned int len, dlen;
+	int ret;
+	char *ptr;
+
+	OpenSSL_add_all_digests();
+
+	if (key == NULL) {
+		return -2;
+	}
+
+	ptr = signature;
+
+	// step1
+	len = get_uint32_MSBfirst(ptr);
+	ptr += 4;
+	if (strncmp("ssh-dss", ptr, len) != 0) {
+		return -3;
+	}
+	ptr += len;
+
+	// step2
+	len = get_uint32_MSBfirst(ptr);
+	ptr += 4;
+	sigblob = ptr;
+	ptr += len;
+
+	if (len != SIGBLOB_LEN) {
+		return -4;
+	}
+
+	/* parse signature */
+	if ((sig = DSA_SIG_new()) == NULL)
+		return -5;
+	if ((sig->r = BN_new()) == NULL)
+		return -6;
+	if ((sig->s = BN_new()) == NULL)
+		return -7;
+	BN_bin2bn(sigblob, INTBLOB_LEN, sig->r);
+	BN_bin2bn(sigblob+ INTBLOB_LEN, INTBLOB_LEN, sig->s);
+
+	/* sha1 the data */
+	EVP_DigestInit(&md, evp_md);
+	EVP_DigestUpdate(&md, data, datalen);
+	EVP_DigestFinal(&md, digest, &dlen);
+
+	ret = DSA_do_verify(digest, dlen, sig, key);
+	memset(digest, 'd', sizeof(digest));
+
+	DSA_SIG_free(sig);
+
+	return ret;
+}
+
+
+//
+// RSA
+// 
 
 /*
- * See:
- * http://www.rsasecurity.com/rsalabs/pkcs/pkcs-1/
- * ftp://ftp.rsasecurity.com/pub/pkcs/pkcs-1/pkcs-1v2-1.asn
- */
+* See:
+* http://www.rsasecurity.com/rsalabs/pkcs/pkcs-1/
+* ftp://ftp.rsasecurity.com/pub/pkcs/pkcs-1/pkcs-1v2-1.asn
+*/
 /*
- * id-sha1 OBJECT IDENTIFIER ::= { iso(1) identified-organization(3)
- *	oiw(14) secsig(3) algorithms(2) 26 }
- */
+* id-sha1 OBJECT IDENTIFIER ::= { iso(1) identified-organization(3)
+*	oiw(14) secsig(3) algorithms(2) 26 }
+*/
 static const u_char id_sha1[] = {
 	0x30, 0x21, /* type Sequence, length 0x21 (33) */
-	0x30, 0x09, /* type Sequence, length 0x09 */
-	0x06, 0x05, /* type OID, length 0x05 */
-	0x2b, 0x0e, 0x03, 0x02, 0x1a, /* id-sha1 OID */
-	0x05, 0x00, /* NULL */
-	0x04, 0x14  /* Octet string, length 0x14 (20), followed by sha1 hash */
+		0x30, 0x09, /* type Sequence, length 0x09 */
+		0x06, 0x05, /* type OID, length 0x05 */
+		0x2b, 0x0e, 0x03, 0x02, 0x1a, /* id-sha1 OID */
+		0x05, 0x00, /* NULL */
+		0x04, 0x14  /* Octet string, length 0x14 (20), followed by sha1 hash */
 };
 /*
- * id-md5 OBJECT IDENTIFIER ::= { iso(1) member-body(2) us(840)
- *	rsadsi(113549) digestAlgorithm(2) 5 }
- */
+* id-md5 OBJECT IDENTIFIER ::= { iso(1) member-body(2) us(840)
+*	rsadsi(113549) digestAlgorithm(2) 5 }
+*/
 static const u_char id_md5[] = {
 	0x30, 0x20, /* type Sequence, length 0x20 (32) */
-	0x30, 0x0c, /* type Sequence, length 0x09 */
-	0x06, 0x08, /* type OID, length 0x05 */
-	0x2a, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x02, 0x05, /* id-md5 */
-	0x05, 0x00, /* NULL */
-	0x04, 0x10  /* Octet string, length 0x10 (16), followed by md5 hash */
+		0x30, 0x0c, /* type Sequence, length 0x09 */
+		0x06, 0x08, /* type OID, length 0x05 */
+		0x2a, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x02, 0x05, /* id-md5 */
+		0x05, 0x00, /* NULL */
+		0x04, 0x10  /* Octet string, length 0x10 (16), followed by md5 hash */
 };
 
-static int
-openssh_RSA_verify(int type, u_char *hash, u_int hashlen,
-    u_char *sigbuf, u_int siglen, RSA *rsa)
+static int openssh_RSA_verify(int type, u_char *hash, u_int hashlen,
+				   u_char *sigbuf, u_int siglen, RSA *rsa)
 {
 	u_int ret, rsasize, oidlen = 0, hlen = 0;
 	int len;
@@ -3264,57 +4372,58 @@ openssh_RSA_verify(int type, u_char *hash, u_int hashlen,
 		return 1; // error
 
 	if ((len = RSA_public_decrypt(siglen, sigbuf, decrypted, rsa,
-	    RSA_PKCS1_PADDING)) < 0) {
-		//error("RSA_public_decrypt failed: %s",
-		//    ERR_error_string(ERR_get_error(), NULL));
-		goto done;
-	}
-	if (len != hlen + oidlen) {
-		//error("bad decrypted len: %d != %d + %d", len, hlen, oidlen);
-		goto done;
-	}
-	if (memcmp(decrypted, oid, oidlen) != 0) {
-		//error("oid mismatch");
-		goto done;
-	}
-	if (memcmp(decrypted + oidlen, hash, hlen) != 0) {
-		//error("hash mismatch");
-		goto done;
-	}
-	ret = 1;
+		RSA_PKCS1_PADDING)) < 0) {
+			//error("RSA_public_decrypt failed: %s",
+			//    ERR_error_string(ERR_get_error(), NULL));
+			goto done;
+		}
+		if (len != hlen + oidlen) {
+			//error("bad decrypted len: %d != %d + %d", len, hlen, oidlen);
+			goto done;
+		}
+		if (memcmp(decrypted, oid, oidlen) != 0) {
+			//error("oid mismatch");
+			goto done;
+		}
+		if (memcmp(decrypted + oidlen, hash, hlen) != 0) {
+			//error("hash mismatch");
+			goto done;
+		}
+		ret = 1;
 done:
-	if (decrypted)
-		free(decrypted);
-	return ret;
+		if (decrypted)
+			free(decrypted);
+		return ret;
 }
 
-int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
-    u_char *data, u_int datalen)
+static int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
+				   u_char *data, u_int datalen)
 {
 	const EVP_MD *evp_md;
 	EVP_MD_CTX md;
-//	char *ktype;
+	//	char *ktype;
 	u_char digest[EVP_MAX_MD_SIZE], *sigblob;
 	u_int len, dlen, modlen;
-	int rlen, ret, nid;
+//	int rlen, ret, nid;
+	int ret, nid;
 	char *ptr;
 
 	OpenSSL_add_all_digests();
 
 	if (key == NULL) {
-		return -1;
+		return -2;
 	}
 	if (BN_num_bits(key->n) < SSH_RSA_MINIMUM_MODULUS_SIZE) {
-		return -1;
+		return -3;
 	}
 	//debug_print(41, signature, signaturelen);
 	ptr = signature;
-	
+
 	// step1
 	len = get_uint32_MSBfirst(ptr);
 	ptr += 4;
 	if (strncmp("ssh-rsa", ptr, len) != 0) {
-		return -1;
+		return -4;
 	}
 	ptr += len;
 
@@ -3323,15 +4432,17 @@ int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
 	ptr += 4;
 	sigblob = ptr;
 	ptr += len;
+#if 0
 	rlen = get_uint32_MSBfirst(ptr);
 	if (rlen != 0) {
 		return -1;
 	}
+#endif
 
 	/* RSA_verify expects a signature of RSA_size */
 	modlen = RSA_size(key);
 	if (len > modlen) {
-		return -1;
+		return -5;
 
 	} else if (len < modlen) {
 		u_int diff = modlen - len;
@@ -3340,11 +4451,11 @@ int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
 		memset(sigblob, 0, diff);
 		len = modlen;
 	}
-//	nid = (datafellows & SSH_BUG_RSASIGMD5) ? NID_md5 : NID_sha1;
+	//	nid = (datafellows & SSH_BUG_RSASIGMD5) ? NID_md5 : NID_sha1;
 	nid = NID_sha1;
 	if ((evp_md = EVP_get_digestbynid(nid)) == NULL) {
 		//error("ssh_rsa_verify: EVP_get_digestbynid %d failed", nid);
-		return -1;
+		return -6;
 	}
 	EVP_DigestInit(&md, evp_md);
 	EVP_DigestUpdate(&md, data, datalen);
@@ -3360,11 +4471,11 @@ int ssh_rsa_verify(RSA *key, u_char *signature, u_int signaturelen,
 	return ret;
 }
 
-int key_verify(
-	RSA *rsa_key, 
-	DSA *dsa_key,
-	unsigned char *signature, unsigned int signaturelen,
-	unsigned char *data, unsigned int datalen)
+static int key_verify(
+			   RSA *rsa_key, 
+			   DSA *dsa_key,
+			   unsigned char *signature, unsigned int signaturelen,
+			   unsigned char *data, unsigned int datalen)
 {
 	int ret = 0;
 
@@ -3372,8 +4483,7 @@ int key_verify(
 		ret = ssh_rsa_verify(rsa_key, signature, signaturelen, data, datalen);
 
 	} else if (dsa_key != NULL) {
-		// TODO:
-
+		ret = ssh_dss_verify(dsa_key, signature, signaturelen, data, datalen);
 
 	} else {
 		return -1;
@@ -3542,12 +4652,11 @@ static BOOL handle_SSH2_dh_kex_reply(PTInstVar pvar)
 		}
 	}
 
-#if 0
 	if (key_verify(rsa, dsa, signature, siglen, hash, 20) != 1) {
 		emsg = "key verify error @ handle_SSH2_dh_kex_reply()";
+		save_memdump(LOGDUMP);
 		goto error;
 	}
-#endif
 
 	kex_derive_keys(pvar, pvar->we_need, hash, share_key, pvar->session_id, pvar->session_id_len);
 
@@ -3562,6 +4671,8 @@ static BOOL handle_SSH2_dh_kex_reply(PTInstVar pvar)
 		// まず、送信用だけ設定する。
 		ssh2_set_newkeys(pvar, MODE_OUT);
 		pvar->ssh2_keys[MODE_OUT].mac.enabled = 1;
+		pvar->ssh2_keys[MODE_OUT].comp.enabled = 1;
+		enable_send_compression(pvar);
 		if (!CRYPT_start_encryption(pvar, 1, 0)) {
 			// TODO: error
 		}
@@ -3579,6 +4690,7 @@ static BOOL handle_SSH2_dh_kex_reply(PTInstVar pvar)
 
 	SSH2_dispatch_init(3);
 	SSH2_dispatch_add_message(SSH2_MSG_NEWKEYS);
+	SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX: Tru64 UNIX workaround   (2005.3.5 yutaka)
 
 	BN_free(dh_server_pub);
 	RSA_free(rsa);
@@ -3686,6 +4798,7 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 	BIGNUM *share_key = NULL;
 	char *hash;
 	char *emsg, emsg_tmp[1024];  // error message
+	int ret;
 
 
 	// TODO: buffer overrun check
@@ -3695,12 +4808,16 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 	// パケットサイズ - (パディングサイズ+1)；真のパケットサイズ
 	len = pvar->ssh_state.payloadlen;
 
+	push_memdump("DH_GEX_REPLY", "full dump", data, len);
+
 	// for debug
 	//write_buffer_file(data, len);
 
 	bloblen = get_uint32_MSBfirst(data);
 	data += 4;
 	server_host_key_blob = data; // for hash
+
+	push_memdump("DH_GEX_REPLY", "server_host_key_blob", server_host_key_blob, bloblen);
 
 	keynamelen = get_uint32_MSBfirst(data);
 	if (keynamelen >= 128) {
@@ -3711,6 +4828,8 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 	memcpy(key, data, keynamelen);
 	key[keynamelen] = 0;
 	data += keynamelen;
+
+	push_memdump("DH_GEX_REPLY", "keyname", key, keynamelen);
 
 	// RSA key
 	if (strcmp(key, "ssh-rsa") == 0) {
@@ -3773,6 +4892,7 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 	signature = data;
 	data += siglen;
 
+	push_memdump("DH_GEX_REPLY", "signature", signature, siglen);
 
 	// check DH public value
 	if (!dh_pub_is_valid(pvar->kexdh, dh_server_pub)) {
@@ -3815,6 +4935,18 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 		dh_server_pub,        
 		share_key
     );
+
+	
+	{
+		push_memdump("DH_GEX_REPLY kex_dh_gex_hash", "my_kex", buffer_ptr(pvar->my_kex), buffer_len(pvar->my_kex));
+		push_memdump("DH_GEX_REPLY kex_dh_gex_hash", "peer_kex", buffer_ptr(pvar->peer_kex), buffer_len(pvar->peer_kex));
+
+		push_bignum_memdump("DH_GEX_REPLY kex_dh_gex_hash", "dh_server_pub", dh_server_pub);
+		push_bignum_memdump("DH_GEX_REPLY kex_dh_gex_hash", "share_key", share_key);
+
+		push_memdump("DH_GEX_REPLY kex_dh_gex_hash", "hash", hash, 20);
+	}
+
 	//debug_print(30, hash, 20);
 	//debug_print(31, pvar->client_version_string, strlen(pvar->client_version_string));
 	//debug_print(32, pvar->server_version_string, strlen(pvar->server_version_string));
@@ -3833,12 +4965,12 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 		}
 	}
 
-#if 0
-	if (key_verify(rsa, dsa, signature, siglen, hash, 20) != 1) {
-		emsg = "key verify error @ handle_SSH2_dh_kex_reply()";
+	if ((ret = key_verify(rsa, dsa, signature, siglen, hash, 20)) != 1) {
+		_snprintf(emsg_tmp, sizeof(emsg_tmp), "key verify error(%d) @ SSH2_DH_GEX\r\n%s", ret, SENDTOME);
+		emsg = emsg_tmp;
+		save_memdump(LOGDUMP);
 		goto error;
 	}
-#endif
 
 	kex_derive_keys(pvar, pvar->we_need, hash, share_key, pvar->session_id, pvar->session_id_len);
 
@@ -3853,6 +4985,8 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 		// まず、送信用だけ設定する。
 		ssh2_set_newkeys(pvar, MODE_OUT);
 		pvar->ssh2_keys[MODE_OUT].mac.enabled = 1;
+		pvar->ssh2_keys[MODE_OUT].comp.enabled = 1;
+		enable_send_compression(pvar);
 		if (!CRYPT_start_encryption(pvar, 1, 0)) {
 			// TODO: error
 		}
@@ -3870,6 +5004,7 @@ static BOOL handle_SSH2_dh_gex_reply(PTInstVar pvar)
 
 	SSH2_dispatch_init(3);
 	SSH2_dispatch_add_message(SSH2_MSG_NEWKEYS);
+	SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX: Tru64 UNIX workaround   (2005.3.5 yutaka)
 
 	BN_free(dh_server_pub);
 	RSA_free(rsa);
@@ -3911,8 +5046,11 @@ static BOOL handle_SSH2_dh_common_reply(PTInstVar pvar)
 }
 
 
-static void do_SSH2_dispatch_setup_for_transfer(void)
+static void do_SSH2_dispatch_setup_for_transfer(PTInstVar pvar)
 {
+	// キー再作成情報のクリア (2005.6.19 yutaka)
+	pvar->rekeying = 0;
+
 	SSH2_dispatch_init(6);
 	SSH2_dispatch_add_range_message(SSH2_MSG_REQUEST_SUCCESS, SSH2_MSG_CHANNEL_FAILURE);
 	SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX
@@ -3924,7 +5062,12 @@ static void do_SSH2_dispatch_setup_for_transfer(void)
 static BOOL handle_SSH2_newkeys(PTInstVar pvar)
 {
 	int supported_ciphers = (1 << SSH_CIPHER_3DES_CBC | 1 << SSH_CIPHER_AES128);
-	int type = (1 << SSH_AUTH_PASSWORD) | (1 << SSH_AUTH_RSA);
+	int type = (1 << SSH_AUTH_PASSWORD) | (1 << SSH_AUTH_RSA) | (1 << SSH_AUTH_TIS);
+
+	notify_verbose_message(pvar, "SSH2_MSG_NEWKEYS is received(DH key generation is completed).", LOG_LEVEL_VERBOSE);
+
+	// ログ採取の終了 (2005.3.7 yutaka)
+	finish_memdump();
 
 	// finish key exchange
 	pvar->key_done = 1;
@@ -3934,10 +5077,12 @@ static BOOL handle_SSH2_newkeys(PTInstVar pvar)
 		// かつ、受信用の暗号鍵の再設定をここで行う。
 		ssh2_set_newkeys(pvar, MODE_IN);
 		pvar->ssh2_keys[MODE_IN].mac.enabled = 1;
+		pvar->ssh2_keys[MODE_IN].comp.enabled = 1;
+		enable_recv_compression(pvar);
 		if (!CRYPT_start_encryption(pvar, 0, 1)) {
 			// TODO: error
 		}
-		do_SSH2_dispatch_setup_for_transfer();
+		do_SSH2_dispatch_setup_for_transfer(pvar);
 		return TRUE;
 	}
 
@@ -3960,17 +5105,28 @@ BOOL do_SSH2_userauth(PTInstVar pvar)
 	char *s;
 	unsigned char *outmsg;
 	int len;
-
-#if 1
-	// TODO: MACの決定
-	{
 	int mode;
+
+	// SSH2 keyboard-interactive methodの初期化 (2005.1.22 yutaka)
+	pvar->keyboard_interactive_done = 0;
+	// パスワードが入力されたら 1 を立てる (2005.3.12 yutaka)
+	pvar->keyboard_interactive_password_input = 0;
+
+	// すでにログイン処理を行っている場合は、SSH2_MSG_SERVICE_REQUESTの送信は
+	// しないことにする。OpenSSHでは支障ないが、Tru64 UNIXではサーバエラーとなってしまうため。
+	// (2005.3.10 yutaka)
+	if (pvar->userauth_retry_count > 0) {
+		return handle_SSH2_authrequest(pvar);
+		/* NOT REACHED */
+	}
 
 	for (mode = 0 ; mode < MODE_MAX ; mode++) {
 		pvar->ssh2_keys[mode].mac.enabled = 1;
+		pvar->ssh2_keys[mode].comp.enabled = 1;
 	}
-	}
-#endif
+	// パケット圧縮が有効なら初期化する。(2005.7.9 yutaka)
+	prep_compression(pvar);
+	enable_compression(pvar);
 
 	// start user authentication
 	msg = buffer_init();
@@ -3989,19 +5145,204 @@ BOOL do_SSH2_userauth(PTInstVar pvar)
 
 	SSH2_dispatch_init(4);
 	SSH2_dispatch_add_message(SSH2_MSG_SERVICE_ACCEPT);
+	SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX: Tru64 UNIX workaround   (2005.3.5 yutaka)
+
+	notify_verbose_message(pvar, "SSH2_MSG_SERVICE_REQUEST was sent.", LOG_LEVEL_VERBOSE);
 
 	return TRUE;
 }
 
+
+static char *get_SSH2_keyname(CRYPTKeyPair *keypair)
+{
+	char *s;
+
+	if (keypair->RSA_key != NULL) {
+		s = "ssh-rsa";
+	} else {
+		s = "ssh-dss";
+	}
+
+	return (s);
+}
+
+
+static BOOL generate_SSH2_keysign(CRYPTKeyPair *keypair, char **sigptr, int *siglen, char *data, int datalen)
+{
+	buffer_t *msg = NULL;
+	char *s;
+
+	msg = buffer_init();
+	if (msg == NULL) {
+		// TODO: error check
+		return FALSE;
+	}
+
+	if (keypair->RSA_key != NULL) { // RSA
+		const EVP_MD *evp_md;
+		EVP_MD_CTX md;
+		u_char digest[EVP_MAX_MD_SIZE], *sig;
+		u_int slen, dlen, len;
+		int ok, nid;
+
+		nid = NID_sha1;
+		if ((evp_md = EVP_get_digestbynid(nid)) == NULL) {
+			goto error;
+		}
+
+		// ダイジェスト値の計算
+		EVP_DigestInit(&md, evp_md);
+		EVP_DigestUpdate(&md, data, datalen);
+		EVP_DigestFinal(&md, digest, &dlen);
+
+		slen = RSA_size(keypair->RSA_key);
+		sig = malloc(slen);
+		if (sig == NULL)
+			goto error;
+
+		// 電子署名を計算
+		ok = RSA_sign(nid, digest, dlen, sig, &len, keypair->RSA_key);
+		memset(digest, 'd', sizeof(digest));
+		if (ok != 1) { // error
+			free(sig);
+			goto error;
+		}
+		// 署名のサイズがバッファより小さい場合、後ろへずらす。先頭はゼロで埋める。
+		if (len < slen) {
+			u_int diff = slen - len;
+			memmove(sig + diff, sig, len);
+			memset(sig, 0, diff);
+
+		} else if (len > slen) {
+			free(sig);
+			goto error;
+
+		} else {
+			// do nothing
+
+		}
+
+		s = get_SSH2_keyname(keypair);
+		buffer_put_string(msg, s, strlen(s));
+		buffer_append_length(msg, sig, slen);
+		len = buffer_len(msg);
+
+		// setting
+		*siglen = len;
+		*sigptr = malloc(len);
+		if (*sigptr == NULL) {
+			free(sig);
+			goto error;
+		}
+		memcpy(*sigptr, buffer_ptr(msg), len);
+		free(sig);
+
+	} else { // DSA
+		DSA_SIG *sig;
+		const EVP_MD *evp_md = EVP_sha1();
+		EVP_MD_CTX md;
+		u_char digest[EVP_MAX_MD_SIZE], sigblob[SIGBLOB_LEN];
+		u_int rlen, slen, len, dlen;
+
+		// ダイジェストの計算
+		EVP_DigestInit(&md, evp_md);
+		EVP_DigestUpdate(&md, data, datalen);
+		EVP_DigestFinal(&md, digest, &dlen);
+
+		// DSA電子署名を計算
+		sig = DSA_do_sign(digest, dlen, keypair->DSA_key);
+		memset(digest, 'd', sizeof(digest));
+		if (sig == NULL) {
+			goto error;
+		}
+
+		// BIGNUMからバイナリ値への変換
+		rlen = BN_num_bytes(sig->r);
+		slen = BN_num_bytes(sig->s);
+		if (rlen > INTBLOB_LEN || slen > INTBLOB_LEN) {
+			DSA_SIG_free(sig);
+			goto error;
+		}
+		memset(sigblob, 0, SIGBLOB_LEN);
+		BN_bn2bin(sig->r, sigblob+ SIGBLOB_LEN - INTBLOB_LEN - rlen);
+		BN_bn2bin(sig->s, sigblob+ SIGBLOB_LEN - slen);
+		DSA_SIG_free(sig);
+
+		// setting
+		s = get_SSH2_keyname(keypair);
+		buffer_put_string(msg, s, strlen(s));
+		buffer_append_length(msg, sigblob, sizeof(sigblob));
+		len = buffer_len(msg);
+
+		// setting
+		*siglen = len;
+		*sigptr = malloc(len);
+		if (*sigptr == NULL) {
+			goto error;
+		}
+		memcpy(*sigptr, buffer_ptr(msg), len);
+
+	}
+
+	buffer_free(msg);
+	return TRUE;
+
+error:
+	buffer_free(msg);
+
+	return FALSE;
+}
+
+
+static BOOL get_SSH2_publickey_blob(PTInstVar pvar, buffer_t **blobptr, int *bloblen)
+{
+	buffer_t *msg = NULL;
+	CRYPTKeyPair *keypair;
+	char *s;
+
+	msg = buffer_init();
+	if (msg == NULL) {
+		// TODO: error check
+		return FALSE;
+	}
+
+	keypair = pvar->auth_state.cur_cred.key_pair;
+
+	if (keypair->RSA_key != NULL) { // RSA
+		s = get_SSH2_keyname(keypair);
+		buffer_put_string(msg, s, strlen(s));
+		buffer_put_bignum2(msg, keypair->RSA_key->e); // 公開指数
+		buffer_put_bignum2(msg, keypair->RSA_key->n); // p×q
+
+	} else { // DSA
+		s = get_SSH2_keyname(keypair);
+		buffer_put_string(msg, s, strlen(s));
+		buffer_put_bignum2(msg, keypair->DSA_key->p); // 素数
+		buffer_put_bignum2(msg, keypair->DSA_key->q); // (p-1)の素因数
+		buffer_put_bignum2(msg, keypair->DSA_key->g); // 整数
+		buffer_put_bignum2(msg, keypair->DSA_key->pub_key); // 公開鍵
+
+	}
+
+	*blobptr = msg;
+	*bloblen = buffer_len(msg);
+
+	return TRUE;
+}
+
+
+// ユーザ認証パケットの構築
 static BOOL handle_SSH2_authrequest(PTInstVar pvar)
 {
-	buffer_t *msg;
+	buffer_t *msg = NULL;
 	char *s;
 	unsigned char *outmsg;
 	int len;
+	char *connect_id = "ssh-connection";
+	int kbdint = 0;
 
-	//		pvar->auth_state.cur_cred.password = password;
-	//		pvar->auth_state.user =
+	notify_verbose_message(pvar, "SSH2_MSG_SERVICE_ACCEPT is received.", LOG_LEVEL_VERBOSE);
+
 	msg = buffer_init();
 	if (msg == NULL) {
 		// TODO: error check
@@ -4009,22 +5350,126 @@ static BOOL handle_SSH2_authrequest(PTInstVar pvar)
 	}
 
 	// ペイロードの構築
-	// TODO:
-	s = pvar->auth_state.user;  // ユーザ名
-#ifdef SSH2_DEBUG
-	s = "nike";
-#endif
+	if (pvar->ssh2_autologin == 1) { // SSH2自動ログイン
+		s = pvar->ssh2_username;
+	} else {
+		s = pvar->auth_state.user;  // ユーザ名
+	}
 	buffer_put_string(msg, s, strlen(s));
-	s = "ssh-connection";
-	buffer_put_string(msg, s, strlen(s));
-	s = "password";
-	buffer_put_string(msg, s, strlen(s));
-	buffer_put_char(msg, 0); // 0
-	s = pvar->auth_state.cur_cred.password;  // パスワード
-#ifdef SSH2_DEBUG
-	s = "kukuri";
-#endif
-	buffer_put_string(msg, s, strlen(s));
+
+	if (pvar->auth_state.cur_cred.method == SSH_AUTH_PASSWORD) { // パスワード認証
+		// 初回は keyboard-interactive メソッドでトライする (2005.1.22 yutaka)
+		// cf. http://www.openssh.com/txt/draft-ietf-secsh-auth-kbdinteract-02.txt
+
+		if (pvar->settings.ssh2_keyboard_interactive == 1 &&
+			pvar->keyboard_interactive_done == 0) { // keyboard-interactive method
+			pvar->keyboard_interactive_done = 1;
+			kbdint = 1;
+
+			//s = "ssh-userauth";  // service name
+			s = connect_id;
+			buffer_put_string(msg, s, strlen(s));
+			s = "keyboard-interactive";  // method name
+			buffer_put_string(msg, s, strlen(s));
+			s = "";  // language tag
+			buffer_put_string(msg, s, strlen(s));
+			s = "";  // submethods
+			buffer_put_string(msg, s, strlen(s));
+
+
+		} else {
+			// password authentication method
+			s = connect_id;
+			buffer_put_string(msg, s, strlen(s));
+			s = "password";
+			buffer_put_string(msg, s, strlen(s));
+			buffer_put_char(msg, 0); // 0
+
+			if (pvar->ssh2_autologin == 1) { // SSH2自動ログイン
+				s = pvar->ssh2_password;
+			} else {
+				s = pvar->auth_state.cur_cred.password;  // パスワード
+			}
+			buffer_put_string(msg, s, strlen(s));
+
+		}
+
+	} else if (pvar->auth_state.cur_cred.method == SSH_AUTH_TIS) { // keyboard-interactive (2005.3.12 yutaka)
+		pvar->keyboard_interactive_done = 1;
+		kbdint = 1;
+
+		//s = "ssh-userauth";  // service name
+		s = connect_id;
+		buffer_put_string(msg, s, strlen(s));
+		s = "keyboard-interactive";  // method name
+		buffer_put_string(msg, s, strlen(s));
+		s = "";  // language tag
+		buffer_put_string(msg, s, strlen(s));
+		s = "";  // submethods
+		buffer_put_string(msg, s, strlen(s));
+
+	} else if (pvar->auth_state.cur_cred.method == SSH_AUTH_RSA) { // 公開鍵認証
+		buffer_t *signbuf = NULL;
+		buffer_t *blob = NULL;
+		int bloblen;
+		char *signature = NULL;
+		int siglen;
+		CRYPTKeyPair *keypair = pvar->auth_state.cur_cred.key_pair;
+
+		if (get_SSH2_publickey_blob(pvar, &blob, &bloblen) == FALSE) {
+			goto error;
+		}
+
+		// step1
+		signbuf = buffer_init();
+		if (signbuf == NULL) {
+			buffer_free(blob);
+			goto error;
+		}
+		// セッションID
+		buffer_append_length(signbuf, pvar->session_id, pvar->session_id_len);
+		buffer_put_char(signbuf, SSH2_MSG_USERAUTH_REQUEST); 
+		s = pvar->auth_state.user;  // ユーザ名
+		buffer_put_string(signbuf, s, strlen(s));
+		s = connect_id;
+		buffer_put_string(signbuf, s, strlen(s));
+		s = "publickey";
+		buffer_put_string(signbuf, s, strlen(s));
+		buffer_put_char(signbuf, 1); // true
+		s = get_SSH2_keyname(keypair); // key typeに応じた文字列を得る
+		buffer_put_string(signbuf, s, strlen(s));
+		s = buffer_ptr(blob);
+		buffer_append_length(signbuf, s, bloblen);
+
+		// 署名の作成
+		if ( generate_SSH2_keysign(keypair, &signature, &siglen, buffer_ptr(signbuf), buffer_len(signbuf)) == FALSE) {
+			buffer_free(blob);
+			buffer_free(signbuf);
+			goto error;
+		}
+
+		// step3
+		s = connect_id;
+		buffer_put_string(msg, s, strlen(s));
+		s = "publickey";
+		buffer_put_string(msg, s, strlen(s));
+		buffer_put_char(msg, 1); // true
+		s = get_SSH2_keyname(keypair); // key typeに応じた文字列を得る
+		buffer_put_string(msg, s, strlen(s));
+		s = buffer_ptr(blob);
+		buffer_append_length(msg, s, bloblen);
+		buffer_append_length(msg, signature, siglen);
+
+
+		buffer_free(blob);
+		buffer_free(signbuf);
+		free(signature);
+
+	} else {
+		goto error;
+
+	}
+
 
 	// パケット送信
 	len = buffer_len(msg);
@@ -4034,11 +5479,114 @@ static BOOL handle_SSH2_authrequest(PTInstVar pvar)
 	buffer_free(msg);
 
 	SSH2_dispatch_init(5);
+	SSH2_dispatch_add_message(SSH2_MSG_IGNORE); // XXX: Tru64 UNIX workaround   (2005.3.5 yutaka)
+	if (kbdint == 1) { // keyboard-interactive method
+		SSH2_dispatch_add_message(SSH2_MSG_USERAUTH_INFO_REQUEST);
+	} 
 	SSH2_dispatch_add_message(SSH2_MSG_USERAUTH_SUCCESS);
 	SSH2_dispatch_add_message(SSH2_MSG_USERAUTH_FAILURE);
 	SSH2_dispatch_add_message(SSH2_MSG_USERAUTH_BANNER);
 
+	{
+	char buf[128];
+	_snprintf(buf, sizeof(buf), "SSH2_MSG_USERAUTH_REQUEST was sent(method %d)", pvar->auth_state.cur_cred.method);
+	notify_verbose_message(pvar, buf, LOG_LEVEL_VERBOSE);
+	}
+
 	return TRUE;
+
+error:
+	buffer_free(msg);
+
+	return FALSE;
+}
+
+
+//
+// SSH2 heartbeat procedure
+// 
+// NAT環境において、SSHクライアントとサーバ間で通信が発生しなかった場合、
+// ルータが勝手にNATテーブルをクリアすることがあり、SSHコネクションが
+// 切れてしまうことがある。定期的に、クライアントからダミーパケットを
+// 送信することで対処する。(2004.12.10 yutaka)
+//
+static unsigned __stdcall ssh_heartbeat_thread(void FAR * p)
+{
+	static int instance = 0;
+	PTInstVar pvar = (PTInstVar)p;
+	time_t tick;
+
+	// すでに実行中なら何もせずに返る。
+	if (instance > 0)
+		return 0;
+	instance++;
+
+	for (;;) {
+		// ソケットがクローズされたらスレッドを終わる
+		if (pvar->socket == INVALID_SOCKET)
+			break;
+
+		// 一定時間無通信であれば、サーバへダミーパケットを送る
+		// 閾値が0であれば何もしない。
+		tick = time(NULL) - pvar->ssh_heartbeat_tick;
+		if (pvar->ts_SSH->ssh_heartbeat_overtime > 0 && 
+			tick > pvar->ts_SSH->ssh_heartbeat_overtime) { 
+			buffer_t *msg;
+			char *s;
+			unsigned char *outmsg;
+			int len;
+
+			// 別コンテキストで、SSHのシーケンスへ割り込まないようにロックを取る。
+			ssh_heartbeat_lock();
+
+			msg = buffer_init();
+			if (msg == NULL) {
+				// TODO: error check
+				continue;
+			}
+			s = "ssh-heartbeat";
+			buffer_put_string(msg, s, strlen(s));
+			len = buffer_len(msg);
+			if (SSHv1(pvar)) {
+				outmsg = begin_send_packet(pvar, SSH_MSG_IGNORE, len);
+			} else {
+				outmsg = begin_send_packet(pvar, SSH2_MSG_IGNORE, len);
+			}
+			memcpy(outmsg, buffer_ptr(msg), len);
+			finish_send_packet(pvar);
+			buffer_free(msg);
+
+			ssh_heartbeat_unlock();
+		}
+
+		Sleep(100); // yield
+	}
+
+	instance = 0;
+
+	return 0; 
+}
+
+static void start_ssh_heartbeat_thread(PTInstVar pvar)
+{
+	HANDLE thread;
+	unsigned tid;
+
+	thread = (HANDLE)_beginthreadex(NULL, 0, ssh_heartbeat_thread, pvar, 0, &tid);
+	if (thread == (HANDLE)-1) {
+		// TODO:
+	} 
+	pvar->ssh_heartbeat_thread = thread;
+}
+
+// スレッドの停止 (2004.12.27 yutaka)
+void halt_ssh_heartbeat_thread(PTInstVar pvar)
+{
+	if (pvar->ssh_heartbeat_thread != (HANDLE)-1L) {
+		WaitForSingleObject(pvar->ssh_heartbeat_thread, INFINITE);
+		CloseHandle(pvar->ssh_heartbeat_thread);
+		pvar->ssh_heartbeat_thread = (HANDLE)-1L;
+	}
 }
 
 
@@ -4048,22 +5596,23 @@ static BOOL handle_SSH2_userauth_success(PTInstVar pvar)
 	char *s;
 	unsigned char *outmsg;
 	int len;
+	Channel_t *c;
 
 	// 認証OK
 	pvar->userauth_success = 1;
 
-	// ディスパッチルーチンの再設定
-	do_SSH2_dispatch_setup_for_transfer();
-
-
 	// チャネル設定
-	pvar->local_window = CHAN_SES_WINDOW_DEFAULT;
-	pvar->local_window_max = CHAN_SES_WINDOW_DEFAULT;
-	pvar->local_consumed = 0;
-	pvar->local_maxpacket = CHAN_SES_PACKET_DEFAULT;
-	pvar->remote_window = 0;
-	pvar->remote_maxpacket = 0;
+	// FWD_prep_forwarding()でshell IDを使うので、先に設定を持ってくる。(2005.7.3 yutaka)
+	c = ssh2_channel_new(CHAN_SES_WINDOW_DEFAULT, CHAN_SES_PACKET_DEFAULT, TYPE_SHELL, -1);
+	if (c == NULL) {
+		// TODO: error check
+		return FALSE;
+	}
+	// シェルのIDを取っておく
+	pvar->shell_id = c->self_id;
 
+	// ディスパッチルーチンの再設定
+	do_SSH2_dispatch_setup_for_transfer(pvar);
 
 	// シェルオープン
 	msg = buffer_init();
@@ -4073,14 +5622,20 @@ static BOOL handle_SSH2_userauth_success(PTInstVar pvar)
 	}
 	s = "session";
 	buffer_put_string(msg, s, strlen(s));  // ctype
-	buffer_put_int(msg, 0);  // self
-	buffer_put_int(msg, pvar->local_window);  // local_window
-	buffer_put_int(msg, pvar->local_maxpacket);  // local_maxpacket
+	buffer_put_int(msg, c->self_id);  // self(channel number)
+	buffer_put_int(msg, c->local_window);  // local_window
+	buffer_put_int(msg, c->local_maxpacket);  // local_maxpacket
 	len = buffer_len(msg);
 	outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_OPEN, len);
 	memcpy(outmsg, buffer_ptr(msg), len);
 	finish_send_packet(pvar);
 	buffer_free(msg);
+
+	// ハートビート・スレッドの開始 (2004.12.11 yutaka)
+	start_ssh_heartbeat_thread(pvar);
+
+	notify_verbose_message(pvar, "User authentication is successful and SSH heartbeat thread is starting.", LOG_LEVEL_VERBOSE);
+	notify_verbose_message(pvar, "SSH2_MSG_CHANNEL_OPEN was sent.", LOG_LEVEL_VERBOSE);
 
 	return TRUE;
 }
@@ -4090,6 +5645,24 @@ static BOOL handle_SSH2_userauth_failure(PTInstVar pvar)
 {
 	// TCP connection closed
 	//notify_closed_connection(pvar);
+
+	// retry countの追加 (2005.3.10 yutaka)
+	pvar->userauth_retry_count++;
+
+	// keyboard-interactive methodでトライして失敗した場合、次にpassword authentication method
+	// で無条件にトライしてみる。(2005.1.22 yutaka)
+	if (pvar->keyboard_interactive_done == 1) {
+		handle_SSH2_authrequest(pvar);
+		pvar->keyboard_interactive_done = 0; // clear flag
+		return TRUE;
+	}
+
+	if (pvar->ssh2_autologin == 1) {
+		// SSH2自動ログインが有効の場合は、リトライは行わない。(2004.12.4 yutaka)
+		notify_fatal_error(pvar,
+			"SSH2 autologin error: user authentication was failure");
+		return TRUE;
+	}
 
 	// ユーザ認証に失敗したときは、ユーザ名は固定して、パスワードの再入力を
 	// させる。ここの処理は SSH1 と同じ。(2004.10.3 yutaka)
@@ -4109,14 +5682,121 @@ static BOOL handle_SSH2_userauth_banner(PTInstVar pvar)
 }
 
 
+// SSH2 keyboard-interactive methodの SSH2_MSG_USERAUTH_INFO_REQUEST 処理関数
+//
+// ※メモ：OpenSSHでPAMを有効にする方法
+//・ビルド
+//# ./configure --with-pam
+//# make
+//
+//・/etc/ssh/sshd_config に下記のように書く。
+//PasswordAuthentication no
+//PermitEmptyPasswords no
+//ChallengeResponseAuthentication yes
+//UsePAM yes
+//
+// (2005.1.23 yutaka)
+BOOL handle_SSH2_userauth_inforeq(PTInstVar pvar)
+{
+	int len;
+	char *data;
+	int slen = 0, num, echo;
+	char *s, *prompt = NULL;
+	buffer_t *msg;
+	unsigned char *outmsg;
+	int i;
+
+	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
+	data = pvar->ssh_state.payload;
+	// パケットサイズ - (パディングサイズ+1)；真のパケットサイズ
+	len = pvar->ssh_state.payloadlen;
+
+	//debug_print(10, data, len);
+
+	///////// step1
+	// get string
+	slen = get_uint32_MSBfirst(data);
+	data += 4;
+	s = data;  // name
+	data += slen;
+
+	// get string
+	slen = get_uint32_MSBfirst(data);
+	data += 4;
+	s = data;  // instruction
+	data += slen;
+
+	// get string
+	slen = get_uint32_MSBfirst(data);
+	data += 4;
+	s = data;  // language tag
+	data += slen;
+
+	// num-prompts
+	num = get_uint32_MSBfirst(data);
+	data += 4;
+
+	///////// step2
+	// サーバへパスフレーズを送る
+	msg = buffer_init();
+	if (msg == NULL) {
+		// TODO: error check
+		return FALSE;
+	}
+	buffer_put_int(msg, num);
+
+	// プロンプトの数だけ prompt & echo が繰り返される。
+	for (i = 0 ; i < num ; i++) {
+		// get string
+		slen = get_uint32_MSBfirst(data);
+		data += 4;
+		prompt = data;  // prompt
+		data += slen;
+
+		// get boolean
+		echo = data[0];
+		data += 1;
+
+		// keyboard-interactive method (2005.3.12 yutaka)
+		if (pvar->keyboard_interactive_password_input == 0 &&
+			pvar->auth_state.cur_cred.method == SSH_AUTH_TIS) {
+			AUTH_set_TIS_mode(pvar, prompt, slen);
+			AUTH_advance_to_next_cred(pvar);
+			pvar->ssh_state.status_flags &= ~STATUS_DONT_SEND_CREDENTIALS;
+			//try_send_credentials(pvar);
+			buffer_free(msg);
+			return TRUE;
+		}
+
+		// TODO: ここでプロンプトを表示してユーザから入力させるのが正解。
+		s = pvar->auth_state.cur_cred.password;
+		buffer_put_string(msg, s, strlen(s));  
+	}
+
+	len = buffer_len(msg);
+	outmsg = begin_send_packet(pvar, SSH2_MSG_USERAUTH_INFO_RESPONSE, len);
+	memcpy(outmsg, buffer_ptr(msg), len);
+	finish_send_packet(pvar);
+	buffer_free(msg);
+
+	return TRUE;
+}
+
+
 static BOOL handle_SSH2_open_confirm(PTInstVar pvar)
 {	
-	buffer_t *msg;
+	buffer_t *msg, *ttymsg;
 	char *s;
 	unsigned char *outmsg;
 	int len;
 	char *data;
 	int id, remote_id;
+	Channel_t *c;
+#ifdef DONT_WANTCONFIRM
+	int wantconfirm = 0; // false 
+#else
+	int wantconfirm = 1; // true 
+#endif
 
 	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
 	data = pvar->ssh_state.payload;
@@ -4125,18 +5805,37 @@ static BOOL handle_SSH2_open_confirm(PTInstVar pvar)
 
 	id = get_uint32_MSBfirst(data);
 	data += 4;
+
+	c = ssh2_channel_lookup(id);
+	if (c == NULL) {
+		// TODO:
+		return FALSE;
+	}
+
 	// TODO: id check
 	remote_id = get_uint32_MSBfirst(data);
 	data += 4;
 
-	pvar->remote_id = remote_id;
+	c->remote_id = remote_id;
 	pvar->session_nego_status = 1;  
 
 	// remote window size
-	pvar->remote_window = get_uint32_MSBfirst(data);
+	c->remote_window = get_uint32_MSBfirst(data);
 	data += 4;
-	pvar->remote_maxpacket = get_uint32_MSBfirst(data);
+	c->remote_maxpacket = get_uint32_MSBfirst(data);
 	data += 4;
+
+	if (c->type == TYPE_PORTFWD) {
+		// port-forwadingの"direct-tcpip"が成功。
+		FWD_confirmed_open(pvar, c->local_num, -1);
+		notify_verbose_message(pvar, "SSH2_MSG_CHANNEL_REQUEST was received. (port-fowarding)", LOG_LEVEL_VERBOSE);
+		return TRUE;
+	}
+
+	// ポートフォワーディングの準備 (2005.2.26, 2005.6.21 yutaka) 
+	// シェルオープンしたあとに X11 の要求を出さなくてはならない。(2005.7.3 yutaka)
+	FWD_prep_forwarding(pvar);       
+	FWD_enter_interactive_mode(pvar);
 
 	//debug_print(100, data, len);
 
@@ -4146,31 +5845,130 @@ static BOOL handle_SSH2_open_confirm(PTInstVar pvar)
 		// TODO: error check
 		return FALSE;
 	}
+	ttymsg = buffer_init();
+	if (ttymsg == NULL) {
+		// TODO: error check
+		buffer_free(msg);
+		return FALSE;
+	}
+
 	buffer_put_int(msg, remote_id);  
 	s = "pty-req";  // pseudo terminalのリクエスト
 	buffer_put_string(msg, s, strlen(s));  
-	buffer_put_char(msg, 1);  
+	buffer_put_char(msg, wantconfirm);  // wantconfirm (disableに変更 2005/3/28 yutaka)
 	s = pvar->ts->TermType; // TERM
 	buffer_put_string(msg, s, strlen(s));  
 	buffer_put_int(msg, pvar->ssh_state.win_cols);  // columns
 	buffer_put_int(msg, pvar->ssh_state.win_rows);  // lines
 	buffer_put_int(msg, 480);  // XXX:
 	buffer_put_int(msg, 640);  // XXX:
+
+	// TTY modeはここで渡す (2005.7.17 yutaka)
+#if 0
 	s = "";
 	buffer_put_string(msg, s, strlen(s));  
+#else
+	buffer_put_char(ttymsg, 129);  // TTY_OP_OSPEED_PROTO2
+	buffer_put_int(ttymsg, 9600);  // baud rate
+	buffer_put_char(ttymsg, 128);  // TTY_OP_ISPEED_PROTO2
+	buffer_put_int(ttymsg, 9600);  // baud rate
+	// VERASE
+	buffer_put_char(ttymsg, 3);  
+	if (pvar->ts->BSKey == IdBS) {
+		buffer_put_int(ttymsg, 0x08); // BS key
+	} else {
+		buffer_put_int(ttymsg, 0x7F); // DEL key
+	}
+	// TTY_OP_END
+	buffer_put_char(ttymsg, 0);  
+
+	// SSH2では文字列として書き込む。
+	buffer_put_string(msg, buffer_ptr(ttymsg), buffer_len(ttymsg));
+#endif
+
 	len = buffer_len(msg);
 	outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_REQUEST, len);
 	memcpy(outmsg, buffer_ptr(msg), len);
 	finish_send_packet(pvar);
 	buffer_free(msg);
+	buffer_free(ttymsg);
 
+	notify_verbose_message(pvar, "SSH2_MSG_CHANNEL_REQUEST was sent at handle_SSH2_open_confirm().", LOG_LEVEL_VERBOSE);
+
+	if (wantconfirm == 0) {
+		handle_SSH2_channel_success(pvar);
+	}
 
 	return TRUE;
 }
 
 
+// SSH2 port-forwarding においてセッションがオープンできない場合のサーバからのリプライ（失敗）
+static BOOL handle_SSH2_open_failure(PTInstVar pvar)
+{	
+	int len;
+	char *data;
+	int id;
+	Channel_t *c;
+	int reason;
+	char *cstring;
+	char tmpbuf[256];
+	char *rmsg;
+
+	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
+	data = pvar->ssh_state.payload;
+	// パケットサイズ - (パディングサイズ+1)；真のパケットサイズ
+	len = pvar->ssh_state.payloadlen;
+
+	id = get_uint32_MSBfirst(data);
+	data += 4;
+
+	c = ssh2_channel_lookup(id);
+	if (c == NULL) {
+		// TODO: SSH2_MSG_DISCONNECTを送る
+		return FALSE;
+	}
+
+	reason = get_uint32_MSBfirst(data);
+	data += 4;
+
+	if (reason == SSH2_OPEN_ADMINISTRATIVELY_PROHIBITED) {
+		rmsg = "administratively prohibited";
+	} else if (reason == SSH2_OPEN_CONNECT_FAILED) {
+		rmsg = "connect failed";
+	} else if (reason == SSH2_OPEN_UNKNOWN_CHANNEL_TYPE) {
+		rmsg = "unknown channel type";
+	} else if (reason == SSH2_OPEN_RESOURCE_SHORTAGE) {
+		rmsg = "resource shortage";
+	} else {
+		rmsg = "unknown reason";
+	}
+
+	cstring = buffer_get_string(&data, NULL);
+
+	_snprintf(tmpbuf, sizeof(tmpbuf), 
+		"SSH2_MSG_CHANNEL_OPEN_FAILURE was received.\r\nchannel [%d]: reason: %s(%d) message: %s", 
+		id, rmsg, reason, cstring);
+	notify_nonfatal_error(pvar, tmpbuf);
+
+	free(cstring);
+
+	return TRUE;
+}
+
+
+// SSH2 port-forwarding (remote -> local)に対するリプライ（成功）
 static BOOL handle_SSH2_request_success(PTInstVar pvar)
 {	
+	// 必要であればログを取る。特に何もしなくてもよい。
+
+	return TRUE;
+}
+
+// SSH2 port-forwarding (remote -> local)に対するリプライ（失敗）
+static BOOL handle_SSH2_request_failure(PTInstVar pvar)
+{	
+	// 必要であればログを取る。特に何もしなくてもよい。
 
 	return TRUE;
 }
@@ -4181,24 +5979,51 @@ static BOOL handle_SSH2_channel_success(PTInstVar pvar)
 	char *s;
 	unsigned char *outmsg;
 	int len;
+	Channel_t *c;
+
+	{
+	char buf[128];
+	_snprintf(buf, sizeof(buf), "SSH2_MSG_CHANNEL_SUCCESS is received(nego_status %d).", pvar->session_nego_status);
+	notify_verbose_message(pvar, buf, LOG_LEVEL_VERBOSE);
+	}
 
 	if (pvar->session_nego_status == 1) {
+#ifdef DONT_WANTCONFIRM
+		int wantconfirm = 0; // false 
+#else
+		int wantconfirm = 1; // true
+#endif
+
 		pvar->session_nego_status = 2;  
 		msg = buffer_init();
 		if (msg == NULL) {
 			// TODO: error check
 			return FALSE;
 		}
-		buffer_put_int(msg, pvar->remote_id);  
+		// find channel by shell id(2005.2.27 yutaka)
+		c = ssh2_channel_lookup(pvar->shell_id);
+		if (c == NULL) {
+			// TODO: error check
+			return FALSE;
+		}
+		buffer_put_int(msg, c->remote_id);  
+//		buffer_put_int(msg, pvar->remote_id);  
+
 		s = "shell";
 		buffer_put_string(msg, s, strlen(s));  // ctype
-		buffer_put_char(msg, 1);  
+		buffer_put_char(msg, wantconfirm);   // wantconfirm (disableに変更 2005/3/28 yutaka)
 
 		len = buffer_len(msg);
 		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_REQUEST, len);
 		memcpy(outmsg, buffer_ptr(msg), len);
 		finish_send_packet(pvar);
 		buffer_free(msg);
+
+		notify_verbose_message(pvar, "SSH2_MSG_CHANNEL_REQUEST was sent at handle_SSH2_channel_success().", LOG_LEVEL_VERBOSE);
+
+		if (wantconfirm == 0) {
+			handle_SSH2_channel_success(pvar);
+		}
 
 	} else if (pvar->session_nego_status == 2) {
 		pvar->session_nego_status = 3;
@@ -4211,12 +6036,48 @@ static BOOL handle_SSH2_channel_success(PTInstVar pvar)
 }
 
 
+
+// クライアントのwindow sizeをサーバへ知らせる
+static void do_SSH2_adjust_window_size(PTInstVar pvar, Channel_t *c)
+{
+	const unsigned int window_size = CHAN_SES_PACKET_DEFAULT;
+	buffer_t *msg;
+	unsigned char *outmsg;
+	int len;
+
+	// ローカルのwindow sizeにまだ余裕があるなら、何もしない。
+	if (c->local_window > window_size)
+		return;
+
+	{
+		// pty open
+		msg = buffer_init();
+		if (msg == NULL) {
+			// TODO: error check
+			return;
+		}
+		buffer_put_int(msg, c->remote_id);  
+		buffer_put_int(msg, window_size - c->local_window);  
+
+		len = buffer_len(msg);
+		outmsg = begin_send_packet(pvar, SSH2_MSG_CHANNEL_WINDOW_ADJUST, len);
+		memcpy(outmsg, buffer_ptr(msg), len);
+		finish_send_packet(pvar);
+		buffer_free(msg);
+
+		// クライアントのwindow sizeを増やす
+		c->local_window = window_size;
+	}
+
+}
+
 static BOOL handle_SSH2_channel_data(PTInstVar pvar)
 {	
 	int len;
 	char *data;
 	int id;
 	unsigned int strlen;
+	Channel_t *c;
 
 	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
 	data = pvar->ssh_state.payload;
@@ -4228,30 +6089,44 @@ static BOOL handle_SSH2_channel_data(PTInstVar pvar)
 	// channel number
 	id = get_uint32_MSBfirst(data);
 	data += 4;
+
+	c = ssh2_channel_lookup(id);
+	if (c == NULL) {
+		// TODO:
+		return FALSE;
+	}
+
 	// string length
 	strlen = get_uint32_MSBfirst(data);
 	data += 4;
 
 	// バッファサイズのチェック
-	if (strlen > pvar->local_window_max) {
+	if (strlen > c->local_window_max) {
 		// TODO: logging
 	}
-	if (strlen > pvar->local_window) {
+	if (strlen > c->local_window) {
 		// TODO: logging
 		// local window sizeより大きなパケットは捨てる
 		return FALSE;
 	}
 
 	// ペイロードとしてクライアント(TeraTerm)へ渡す
-	pvar->ssh_state.payload_datalen = strlen;
-	pvar->ssh_state.payload_datastart = 8;
+	if (c->type == TYPE_SHELL) {
+		pvar->ssh_state.payload_datalen = strlen;
+		pvar->ssh_state.payload_datastart = 8;
+
+	} else {
+		//debug_print(0, data, strlen);
+		FWD_received_data(pvar, c->local_num, data, strlen);
+
+	}
 
 	//debug_print(200, data, strlen);
 
 	// ウィンドウサイズの調整
-	pvar->local_window -= strlen;
+	c->local_window -= strlen;
 
-	do_SSH2_adjust_window_size(pvar);
+	do_SSH2_adjust_window_size(pvar, c);
 
 	return TRUE;
 }
@@ -4267,38 +6142,163 @@ static BOOL handle_SSH2_channel_extended_data(PTInstVar pvar)
 
 static BOOL handle_SSH2_channel_eof(PTInstVar pvar)
 {	
-	// 切断時に呼ばれてくるが、特に何もしない。
+	int len;
+	char *data;
+	int id;
+	Channel_t *c;
+
+	// 切断時にサーバが SSH2_MSG_CHANNEL_EOF を送ってくるので、チャネルを解放する。(2005.6.19 yutaka)
+
+	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
+	data = pvar->ssh_state.payload;
+	// パケットサイズ - (パディングサイズ+1)；真のパケットサイズ
+	len = pvar->ssh_state.payloadlen;
+
+	// channel number
+	id = get_uint32_MSBfirst(data);
+	data += 4;
+
+	c = ssh2_channel_lookup(id);
+	if (c == NULL) {
+		// TODO:
+		return FALSE;
+	}
+	if (c->type != TYPE_SHELL) {
+		FWD_channel_input_eof(pvar, c->local_num);
+	}
 
 	return TRUE;
+}
+
+static BOOL handle_SSH2_channel_open(PTInstVar pvar)
+{	
+	int len;
+	char *data;
+	Channel_t *c = NULL;
+	int buflen;
+	char *ctype;
+	int remote_id;
+	int remote_window;
+	int remote_maxpacket;
+	int chan_num = -1;
+
+	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
+	data = pvar->ssh_state.payload;
+	// パケットサイズ - (パディングサイズ+1)；真のパケットサイズ
+	len = pvar->ssh_state.payloadlen;
+
+	// get string
+	ctype = buffer_get_string(&data, &buflen);
+
+	// get value
+	remote_id = get_uint32_MSBfirst(data);
+	data += 4;
+	remote_window = get_uint32_MSBfirst(data);
+	data += 4;
+	remote_maxpacket = get_uint32_MSBfirst(data);
+	data += 4;
+
+	// check Channel Type(string)
+	if (strcmp(ctype, "forwarded-tcpip") == 0) { // port-forwarding(remote to local)
+		char *listen_addr, *orig_addr;
+		int listen_port, orig_port;
+
+		listen_addr = buffer_get_string(&data, &buflen);  // 0.0.0.0
+		listen_port = get_uint32_MSBfirst(data); // 5000
+		data += 4;
+
+		orig_addr = buffer_get_string(&data, &buflen);  // 127.0.0.1
+		orig_port = get_uint32_MSBfirst(data);  // 32776
+		data += 4;
+
+		// searching request entry by listen_port & create_local_channel
+		FWD_open(pvar, remote_id, listen_addr, listen_port, orig_addr, orig_port,
+			&chan_num);
+
+		free(listen_addr);
+		free(orig_addr);
+
+		// channelをアロケートし、必要な情報（remote window size）をここで取っておく。
+		c = ssh2_channel_new(CHAN_TCP_WINDOW_DEFAULT, CHAN_TCP_PACKET_DEFAULT, TYPE_PORTFWD, chan_num);
+		c->remote_id = remote_id;
+		c->remote_window = remote_window;
+		c->remote_maxpacket = remote_maxpacket;
+
+	} else if (strcmp(ctype, "x11") == 0) { // port-forwarding(X11)
+		// X applicationをターミナル上で実行すると、SSH2_MSG_CHANNEL_OPEN が送られてくる。
+		char *orig_str;
+		int orig_port;
+
+		orig_str = buffer_get_string(&data, NULL);  // "127.0.0.1"
+		orig_port = get_uint32_MSBfirst(data);  
+		data += 4;
+		free(orig_str);
+
+		// X server(port 6000)へ接続する。接続に失敗するとTeraTerm自身が切断される。
+		// TODO: 将来、切断されないようにしたい。(2005.7.3 yutaka)
+		FWD_X11_open(pvar, remote_id, NULL, 0, &chan_num);
+
+		// channelをアロケートし、必要な情報（remote window size）をここで取っておく。
+		c = ssh2_channel_new(CHAN_TCP_WINDOW_DEFAULT, CHAN_TCP_PACKET_DEFAULT, TYPE_PORTFWD, chan_num);
+		c->remote_id = remote_id;
+		c->remote_window = remote_window;
+		c->remote_maxpacket = remote_maxpacket;
+
+	} else {
+		// unknown type(unsupported)
+
+	}
+
+	free(ctype);
+
+	return(TRUE);
 }
 
 
 static BOOL handle_SSH2_channel_close(PTInstVar pvar)
 {	
+	int len;
+	char *data;
+	int id;
+	Channel_t *c;
 	buffer_t *msg;
 	char *s;
 	unsigned char *outmsg;
-	int len;
 
-	msg = buffer_init();
-	if (msg == NULL) {
-		// TODO: error check
+	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
+	data = pvar->ssh_state.payload;
+	// パケットサイズ - (パディングサイズ+1)；真のパケットサイズ
+	len = pvar->ssh_state.payloadlen;
+
+	id = get_uint32_MSBfirst(data);
+	data += 4;
+	c = ssh2_channel_lookup(id);
+	if (c == NULL) {
+		// TODO:
 		return FALSE;
 	}
-	buffer_put_int(msg, SSH2_DISCONNECT_PROTOCOL_ERROR);  
-	s = "disconnected by server request";
-	buffer_put_string(msg, s, strlen(s));  
-	s = "";
-	buffer_put_string(msg, s, strlen(s));  
 
-	len = buffer_len(msg);
-	outmsg = begin_send_packet(pvar, SSH2_MSG_DISCONNECT, len);
-	memcpy(outmsg, buffer_ptr(msg), len);
-	finish_send_packet(pvar);
-	buffer_free(msg);
+	if (c->type == TYPE_SHELL) {
+		msg = buffer_init();
+		if (msg == NULL) {
+			// TODO: error check
+			return FALSE;
+		}
+		buffer_put_int(msg, SSH2_DISCONNECT_PROTOCOL_ERROR);  
+		s = "disconnected by server request";
+		buffer_put_string(msg, s, strlen(s));  
+		s = "";
+		buffer_put_string(msg, s, strlen(s));  
 
-	// TCP connection closed
-	notify_closed_connection(pvar);
+		len = buffer_len(msg);
+		outmsg = begin_send_packet(pvar, SSH2_MSG_DISCONNECT, len);
+		memcpy(outmsg, buffer_ptr(msg), len);
+		finish_send_packet(pvar);
+		buffer_free(msg);
+
+		// TCP connection closed
+		notify_closed_connection(pvar);
+	}
 
 	return TRUE;
 }
@@ -4315,6 +6315,7 @@ static BOOL handle_SSH2_channel_request(PTInstVar pvar)
 	int success = 0;
 	char *emsg = "exit-status";
 	int estat = 0;
+	Channel_t *c;
 
 	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
 	data = pvar->ssh_state.payload;
@@ -4326,6 +6327,11 @@ static BOOL handle_SSH2_channel_request(PTInstVar pvar)
 	// ID(4) + string(any) + reply(1) + exit status(4)
 	id = get_uint32_MSBfirst(data);
 	data += 4;
+	c = ssh2_channel_lookup(id);
+	if (c == NULL) {
+		// TODO:
+		return FALSE;
+	}
 
 	buflen = get_uint32_MSBfirst(data);
 	data += 4;
@@ -4358,7 +6364,7 @@ static BOOL handle_SSH2_channel_request(PTInstVar pvar)
 			// TODO: error check
 			return FALSE;
 		}
-		buffer_put_int(msg, pvar->remote_id);  
+		buffer_put_int(msg, c->remote_id);  
 
 		len = buffer_len(msg);
 		outmsg = begin_send_packet(pvar, type, len);
@@ -4377,6 +6383,7 @@ static BOOL handle_SSH2_window_adjust(PTInstVar pvar)
 	char *data;
 	int id;
 	unsigned int adjust;
+	Channel_t *c;
 
 	// 6byte（サイズ＋パディング＋タイプ）を取り除いた以降のペイロード
 	data = pvar->ssh_state.payload;
@@ -4389,12 +6396,141 @@ static BOOL handle_SSH2_window_adjust(PTInstVar pvar)
 	id = get_uint32_MSBfirst(data);
 	data += 4;
 
+	c = ssh2_channel_lookup(id);
+	if (c == NULL)
+		return FALSE;
+
 	adjust = get_uint32_MSBfirst(data);
 	data += 4;
 
 	// window sizeの調整
-	pvar->remote_window += adjust;
+	c->remote_window += adjust;
 
 	return TRUE;
 }
 
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.36  2005/07/15 14:58:04  yutakakn
+ * SSH1接続で一度ユーザ認証に失敗すると、その後認証ができなくなるバグを修正。
+ *
+ * Revision 1.35  2005/07/10 06:44:48  yutakakn
+ * キー再作成時にパケット圧縮が正常に動作せず、サーバ側で正しく解凍できないバグを修正。
+ *
+ * Revision 1.34  2005/07/09 17:08:47  yutakakn
+ * SSH2 packet compressionをサポートした。
+ *
+ * Revision 1.33  2005/07/03 13:32:00  yutakakn
+ * SSH2 port-forwardingの初期化タイミングを変更。
+ *
+ * Revision 1.32  2005/07/03 12:07:53  yutakakn
+ * SSH2 X Window Systemのport forwardingをサポートした。
+ *
+ * Revision 1.31  2005/07/02 08:43:32  yutakakn
+ * SSH2_MSG_CHANNEL_OPEN_FAILURE ハンドラを追加した。
+ *
+ * Revision 1.30  2005/07/02 07:56:13  yutakakn
+ * update SSH2 port-forwading(remote to local)
+ *
+ * Revision 1.29  2005/06/26 14:26:24  yutakakn
+ * update: SSH2 port-forwarding (remote to local)
+ *
+ * Revision 1.28  2005/06/21 13:28:26  yutakakn
+ * SSH2鍵交換中の（鍵交換以外の）SSH2メッセージ送信を破棄するようにした。
+ *
+ * Revision 1.27  2005/06/19 09:17:47  yutakakn
+ * SSH2 port-fowarding(local to remote)をサポートした。
+ *
+ * Revision 1.26  2005/04/08 14:55:03  yutakakn
+ * "Duplicate session"においてSSH自動ログインを行うようにした。
+ *
+ * Revision 1.25  2005/04/03 14:39:48  yutakakn
+ * SSH2 channel lookup機構の追加（ポートフォワーディングのため）。
+ * TTSSH 2.10で追加したlog dump機構において、DH鍵再作成時にbuffer freeで
+ * アプリケーションが落ちてしまうバグを修正。
+ *
+ * Revision 1.24  2005/03/28 13:52:05  yutakakn
+ * SSH2_MSG_CHANNEL_REQUEST送信時において、wantconfirmをfalseにした（サーバからのリプライを期待しない）。
+ * NetScreen(HITACHI) workaround対応。
+ *
+ * Revision 1.23  2005/03/27 04:39:55  yutakakn
+ * SSH2のログ採取(verbose)のデータを追加した。
+ *
+ * Revision 1.22  2005/03/12 15:07:33  yutakakn
+ * SSH2 keyboard-interactive認証をTISダイアログに実装した。
+ *
+ * Revision 1.21  2005/03/10 13:40:39  yutakakn
+ * すでにログイン処理を行っている場合は、SSH2_MSG_SERVICE_REQUESTの送信は
+ * しないことにする。OpenSSHでは支障ないが、Tru64 UNIXではサーバエラーとなってしまうため。
+ *
+ * Revision 1.20  2005/03/09 14:14:25  yutakakn
+ * サーバIDに CR+LF が含まれていた場合、CRの除去ができていなかったバグを修正。
+ *
+ * Revision 1.19  2005/03/08 14:24:11  yutakakn
+ * SSH2 log dump機構の追加。
+ * とりあえず、DH_GEXにおけるkey verifyまでにトレース採取を組み込んだ。
+ *
+ * Revision 1.18  2005/03/05 10:19:05  yutakakn
+ * Tru64 UNIX(HP-UX)向けworkaroundを追加。
+ *
+ * Revision 1.17  2005/03/03 13:37:31  yutakakn
+ * Tru64 UNIX(HP-UX)向けworkaroundを追加。
+ * KEXINIT時にSSH2_MSG_IGNOREを受信可能とした。
+ *
+ * Revision 1.16  2005/03/03 13:28:23  yutakakn
+ * クライアントのSSHバージョンを ttxssh.dll から取得して、サーバへ送るようにした。
+ *
+ * Revision 1.15  2005/01/24 14:07:07  yutakakn
+ * ・keyboard-interactive認証をサポートした。
+ * 　それに伴い、teraterm.iniに "KeyboardInteractive" エントリを追加した。
+ * ・バージョンダイアログに OpenSSLバージョン を追加
+ *
+ * Revision 1.14  2005/01/06 12:29:07  yutakakn
+ * telnet接続時にターミナルサイズ変更を行うと、アプリケーションエラーとなるバグを修正。
+ *
+ * Revision 1.13  2005/01/04 16:09:45  yutakakn
+ * キー再作成時にMAC corruptとなるバグを修正（メモリの二重フリーが原因）。
+ *
+ * Revision 1.12  2005/01/04 13:57:01  yutakakn
+ * SSH2ターミナルサイズ変更通知の追加
+ *
+ * Revision 1.11  2004/12/27 14:22:16  yutakakn
+ * メモリリークを修正。
+ *
+ * Revision 1.10  2004/12/27 14:05:08  yutakakn
+ * 'Auto window close'が有効の場合、切断後の接続ができない問題を修正した。
+ * 　・スレッドの終了待ち合わせ処理の追加
+ * 　・確保済みSSHリソースの解放
+ *
+ * Revision 1.9  2004/12/22 17:28:14  yutakakn
+ * SSH2公開鍵認証(RSA/DSA)をサポートした。
+ *
+ * Revision 1.8  2004/12/17 16:52:36  yutakakn
+ * KEXにおけるRSAおよびDSSのkey verify処理を追加。
+ *
+ * Revision 1.7  2004/12/17 14:28:36  yutakakn
+ * メッセージ認証アルゴリズムに HMAC-MD5 を追加。
+ * TTSSHバージョンダイアログにHMACアルゴリズム表示を追加。
+ *
+ * Revision 1.6  2004/12/17 14:05:55  yutakakn
+ * パケット受信時のHMACチェックを追加。
+ * KEXにおけるHMACアルゴリズムチェックを追加。
+ *
+ * Revision 1.5  2004/12/11 07:31:00  yutakakn
+ * SSH heartbeatスレッドの追加した。これにより、IPマスカレード環境において、ルータの
+ * NATテーブルクリアにより、SSHコネクションが切断される現象が回避される。
+ * それに合わせて、teraterm.iniのTTSSHセクションに、HeartBeat エントリを追加。
+ *
+ * Revision 1.4  2004/12/04 08:18:31  yutakakn
+ * SSH2自動ログインにおいて、ユーザ認証に失敗した場合、リトライを行わないようにした。
+ *
+ * Revision 1.3  2004/12/01 15:37:49  yutakakn
+ * SSH2自動ログイン機能を追加。
+ * 現状、パスワード認証のみに対応。
+ * ・コマンドライン
+ *   /ssh /auth=認証メソッド /user=ユーザ名 /passwd=パスワード
+ *
+ * Revision 1.2  2004/11/29 15:52:37  yutakakn
+ * SSHのdefault protocolをSSH2にした。
+ * 
+ */

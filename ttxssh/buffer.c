@@ -8,6 +8,7 @@
 #include "ttxssh.h"
 #include "util.h"
 #include <openssl/bn.h>
+#include <zlib.h>
 
 void buffer_clear(buffer_t *buf)
 {
@@ -50,19 +51,36 @@ int buffer_append(buffer_t * buf, char *ptr, int size)
 {
 	int n;
 	int ret = -1;
+	int newlen;
 
-	n = buf->offset + size;
-	if (n < buf->maxlen) {
-		memcpy(buf->buf + buf->offset, ptr, size);
-		buf->offset += size;
-		buf->len = buf->offset;
-		ret = 0;
+	for (;;) {
+		n = buf->offset + size;
+		if (n < buf->maxlen) {
+			memcpy(buf->buf + buf->offset, ptr, size);
+			buf->offset += size;
+			buf->len = buf->offset;
+			ret = 0;
+			break;
 
-	} else {
-		char *p = NULL;
-		// TODO: realloc
-		*p = 0;
+		} else {
+			// バッファが足りないので補充する。(2005.7.2 yutaka)
+			newlen = buf->maxlen + size + 32*1024;
+			if (newlen > 0xa00000) { // 1MB over is not supported
+				goto panic;
+			}
+			buf->buf = realloc(buf->buf, newlen);
+			if (buf->buf == NULL)
+				goto panic;
+			buf->maxlen = newlen;
+		}
+	} 
 
+	return (ret);
+
+panic:
+	{
+	char *p = NULL;
+	*p = 0; // application fault
 	}
 
 	return (ret);
@@ -82,6 +100,37 @@ int buffer_append_length(buffer_t * msg, char *ptr, int size)
 	}
 
 	return (ret);
+}
+
+// getting string buffer.
+// NOTE: You should free the return pointer if it's unused.
+// (2005.6.26 yutaka)
+char *buffer_get_string(char **data_ptr, int *buflen_ptr)
+{
+	char *data = *data_ptr;
+	char *ptr;
+	int buflen;
+
+	buflen = get_uint32_MSBfirst(data);
+	data += 4;
+	if (buflen <= 0)
+		return NULL;
+
+	ptr = malloc(buflen + 1);
+	if (ptr == NULL) {
+		if (buflen_ptr != NULL)
+			*buflen_ptr = 0;
+		return NULL;
+	}
+	memcpy(ptr, data, buflen);
+	ptr[buflen] = '\0'; // null-terminate
+	data += buflen;
+
+	*data_ptr = data;
+	if (buflen_ptr != NULL)
+		*buflen_ptr = buflen;
+
+	return(ptr);
 }
 
 void buffer_put_string(buffer_t *msg, char *ptr, int size)
@@ -134,6 +183,54 @@ char *buffer_ptr(buffer_t *msg)
 	return (msg->buf);
 }
 
+char *buffer_tail_ptr(buffer_t *msg)
+{
+	return (char *)(msg->buf + msg->offset);
+}
+
+int buffer_overflow_verify(buffer_t *msg, int len)
+{
+	if (msg->offset + len > msg->maxlen) {
+		return -1;  // error
+	}
+	return 0; // no problem
+}
+
+// for SSH1
+void buffer_put_bignum(buffer_t *buffer, BIGNUM *value)
+{
+    unsigned int bits, bin_size;
+    unsigned char *buf;
+    int oi;
+    char msg[2];
+	
+    bits = BN_num_bits(value);
+	bin_size = (bits + 7) / 8;
+    buf = malloc(bin_size);
+	if (buf == NULL) {
+		*buf = 0;
+		goto error;
+	}
+
+    buf[0] = '\0';
+    /* Get the value of in binary */
+    oi = BN_bn2bin(value, buf);
+	if (oi != bin_size) {
+		goto error;
+	}
+
+    /* Store the number of bits in the buffer in two bytes, msb first. */
+	set_ushort16_MSBfirst(msg, bits);
+	buffer_append(buffer, msg, 2);
+
+    /* Store the binary data. */
+    buffer_append(buffer, (char *)buf, oi);
+
+error:
+    free(buf);
+}
+
+// for SSH2
 void buffer_put_bignum2(buffer_t *msg, BIGNUM *value)
 {
     unsigned int bytes;
@@ -187,3 +284,92 @@ void buffer_dump(FILE *fp, buffer_t *buf)
 	fprintf(fp, "\n");
 }
 
+// バッファのオフセットを進める。
+void buffer_consume(buffer_t *buf, int shift_byte)
+{
+	int n;
+
+	n = buf->offset + shift_byte;
+	if (n < buf->maxlen) {
+		buf->offset += shift_byte;
+	} else {
+		// TODO: fatal error
+	}
+}
+
+// パケットの圧縮
+int buffer_compress(z_stream *zstream, char *payload, int len, buffer_t *compbuf)
+{
+	unsigned char buf[4096];
+	int status;
+
+	// input buffer
+	zstream->next_in = payload;
+	zstream->avail_in = len;
+
+	do {
+		// output buffer
+		zstream->next_out = buf;
+		zstream->avail_out = sizeof(buf);
+
+		// バッファを圧縮する。圧縮すると、逆にサイズが大きくなることも考慮すること。
+		status = deflate(zstream, Z_PARTIAL_FLUSH);
+		if (status == Z_OK) {
+			buffer_append(compbuf, buf, sizeof(buf) - zstream->avail_out);
+		} else {
+			return -1; // error
+		}
+	} while (zstream->avail_out == 0);
+
+	return 0; // success
+}
+
+// パケットの展開
+int buffer_decompress(z_stream *zstream, char *payload, int len, buffer_t *compbuf)
+{
+	unsigned char buf[4096];
+	int status;
+
+	// input buffer
+	zstream->next_in = payload;
+	zstream->avail_in = len;
+
+	do {
+		// output buffer
+		zstream->next_out = buf;
+		zstream->avail_out = sizeof(buf);
+
+		// バッファを展開する。
+		status = inflate(zstream, Z_PARTIAL_FLUSH);
+		if (status == Z_OK) {
+			buffer_append(compbuf, buf, sizeof(buf) - zstream->avail_out);
+
+		} else if (status == Z_OK) {
+			break;
+
+		} else {
+			return -1; // error
+		}
+	} while (zstream->avail_out == 0);
+
+	return 0; // success
+}
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.6  2005/07/02 12:46:41  yutakakn
+ * buffer_append()において4KB以上のバッファの再アロケート処理を追加した。
+ *
+ * Revision 1.5  2005/07/02 08:43:32  yutakakn
+ * SSH2_MSG_CHANNEL_OPEN_FAILURE ハンドラを追加した。
+ *
+ * Revision 1.4  2005/06/26 14:26:24  yutakakn
+ * update: SSH2 port-forwarding (remote to local)
+ *
+ * Revision 1.3  2005/04/23 17:26:57  yutakakn
+ * キー作成ダイアログの追加。
+ *
+ * Revision 1.2  2004/12/19 15:37:37  yutakakn
+ * CVS LogIDの追加
+ *
+ */
