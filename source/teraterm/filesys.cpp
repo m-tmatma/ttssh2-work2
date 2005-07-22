@@ -224,76 +224,86 @@ void FreeFileVar(PFileVar *fv)
 extern "C" {
 void LogStart()
 {
-  LONG Option;
+	LONG Option;
 
-  if ((FileLog) || (BinLog)) return;
+	if ((FileLog) || (BinLog)) return;
 
-  if (! LoadTTFILE()) return;
-  if (! NewFileVar(&LogVar))
-  {
-    FreeTTFILE();
-    return;
-  }
-  LogVar->OpId = OpLog;
+	if (! LoadTTFILE()) return;
+	if (! NewFileVar(&LogVar))
+	{
+		FreeTTFILE();
+		return;
+	}
+	LogVar->OpId = OpLog;
 
-  if (strlen(&(LogVar->FullName[LogVar->DirLen]))==0)
-  {
-    Option = MAKELONG(ts.TransBin,ts.Append);
-    if (! (*GetTransFname)(LogVar, ts.FileDir, GTF_LOG, &Option))
-    {
-      FreeFileVar(&LogVar);
-      FreeTTFILE();
-      return;
-    }
-    ts.TransBin = LOWORD(Option);
-    ts.Append = HIWORD(Option);
-  }
-  else
-    (*SetFileVar)(LogVar);
+	if (strlen(&(LogVar->FullName[LogVar->DirLen]))==0)
+	{
+		// 0x1000 = plain text (2005.2.20 yutaka)
+		// teraterm.iniの設定を見てからデフォルトオプションを決める。(2005.5.7 yutaka)
+		Option = MAKELONG(ts.TransBin,ts.Append | (0x1000 * ts.LogTypePlainText));
+		if (! (*GetTransFname)(LogVar, ts.FileDir, GTF_LOG, &Option))
+		{
+			FreeFileVar(&LogVar);
+			FreeTTFILE();
+			return;
+		}
+		ts.TransBin = LOWORD(Option);
+		ts.Append = HIWORD(Option);
 
-  if (ts.TransBin > 0)
-  {
-    BinLog = TRUE;
-    FileLog = FALSE;
-    if (! CreateBinBuf())
-    {
-      FileTransEnd(OpLog);
-      return;
-    }
-  }
-  else {
-    BinLog = FALSE;
-    FileLog = TRUE;
-    if (! CreateLogBuf())
-    {
-      FileTransEnd(OpLog);
-      return;
-    }
-  }
-  cv.LStart = cv.LogPtr;
-  cv.LCount = 0;
+		if (ts.Append & 0x1000) {
+			ts.LogTypePlainText = 1;
+		} else {
+			ts.LogTypePlainText = 0;
+		}
+		ts.Append &= 0x1; // 1bitにマスクする
 
-  HelpId = HlpFileLog;
-  if (ts.Append > 0)
-  {
-    LogVar->FileHandle = _lopen(LogVar->FullName,OF_WRITE);
-    if (LogVar->FileHandle>0)
-      _llseek(LogVar->FileHandle,0,2);
-    else
-      LogVar->FileHandle = _lcreat(LogVar->FullName,0);
-  }
-  else
-    LogVar->FileHandle = _lcreat(LogVar->FullName,0);
-  LogVar->FileOpen = (LogVar->FileHandle>0);
-  if (! LogVar->FileOpen)
-  {
-    FileTransEnd(OpLog);
-    return;
-  }
-  LogVar->ByteCount = 0;
+	}
+	else
+		(*SetFileVar)(LogVar);
 
-  if (! OpenFTDlg(LogVar))
-    FileTransEnd(OpLog);
+	if (ts.TransBin > 0)
+	{
+		BinLog = TRUE;
+		FileLog = FALSE;
+		if (! CreateBinBuf())
+		{
+			FileTransEnd(OpLog);
+			return;
+		}
+	}
+	else {
+		BinLog = FALSE;
+		FileLog = TRUE;
+		if (! CreateLogBuf())
+		{
+			FileTransEnd(OpLog);
+			return;
+		}
+	}
+	cv.LStart = cv.LogPtr;
+	cv.LCount = 0;
+
+	HelpId = HlpFileLog;
+	if (ts.Append > 0)
+	{
+		LogVar->FileHandle = _lopen(LogVar->FullName,OF_WRITE);
+		if (LogVar->FileHandle>0)
+			_llseek(LogVar->FileHandle,0,2);
+		else
+			LogVar->FileHandle = _lcreat(LogVar->FullName,0);
+	}
+	else
+		LogVar->FileHandle = _lcreat(LogVar->FullName,0);
+	LogVar->FileOpen = (LogVar->FileHandle>0);
+	if (! LogVar->FileOpen)
+	{
+		FileTransEnd(OpLog);
+		return;
+	}
+	LogVar->ByteCount = 0;
+
+	if (! OpenFTDlg(LogVar))
+		FileTransEnd(OpLog);
 }
 }
 
@@ -1063,3 +1073,20 @@ void QVStart(int mode)
     ProtoEnd();
 }
 }
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.2  2005/02/20 14:51:29  yutakakn
+ * ログファイルの種別に"plain text"を追加。このオプションが有効の場合は、ログファイルに
+ * ASCII非表示文字の採取をしない。
+ *
+ * 現在、無視するキャラクタは以下のとおり。
+ * 　・BS
+ * 　・ASCII(0x00-0x1f)のうち非表示なもの
+ *
+ * ただし、例外として以下のものはログ採取対象。
+ * 　・HT
+ * 　・CR
+ * 　・LF
+ * 
+ */
