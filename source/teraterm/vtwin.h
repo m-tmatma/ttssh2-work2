@@ -83,6 +83,12 @@ protected:
 	afx_msg void OnSysKeyUp(UINT nChar, UINT nRepCnt, UINT nFlags);
 	afx_msg void OnTimer(UINT nIDEvent);
 	afx_msg void OnVScroll(UINT nSBCode, UINT nPos, CScrollBar* pScrollBar);
+//<!--by AKASI
+	afx_msg LONG OnWindowPosChanging(UINT wParam, LONG lParam);
+	afx_msg LONG OnSettingChange(UINT wParam, LONG lParam);
+	afx_msg LONG OnEnterSizeMove(UINT wParam, LONG lParam);
+	afx_msg LONG  OnExitSizeMove(UINT wParam, LONG lParam);
+//-->
 	afx_msg LONG OnIMEComposition(UINT wParam, LONG lParam);
 	afx_msg LONG OnAccelCommand(UINT wParam, LONG lParam);
 	afx_msg LONG OnChangeMenu(UINT wParam, LONG lParam);
@@ -96,10 +102,15 @@ protected:
 	afx_msg LONG OnGetSerialNo(UINT wParam, LONG lParam);
 	afx_msg LONG OnKeyCode(UINT wParam, LONG lParam);
 	afx_msg LONG OnProtoEnd(UINT wParam, LONG lParam);
+	afx_msg LONG OnReceiveIpcMessage(UINT wParam, LONG lParam);
 	afx_msg void OnFileNewConnection();
+	afx_msg void OnDuplicateSession();
 	afx_msg void OnCygwinConnection();
+	afx_msg void OnTTMenuLaunch();
+	afx_msg void OnLogMeInLaunch();
 	afx_msg void OnFileLog();
 	afx_msg void OnCommentToLog();
+	afx_msg void OnViewLog();
 	afx_msg void OnExternalSetup();
 	afx_msg void OnFileSend();
 	afx_msg void OnFileKermitRcv();
@@ -136,6 +147,7 @@ protected:
 	afx_msg void OnSetupRestore();
 	afx_msg void OnSetupLoadKeyMap();
 	afx_msg void OnControlResetTerminal();
+	afx_msg void OnControlBroadcastCommand();
 	afx_msg void OnControlAreYouThere();
 	afx_msg void OnControlSendBreak();
 	afx_msg void OnControlResetPort();
