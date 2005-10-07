@@ -71,6 +71,7 @@ BOOL InitTTL(HWND HWin)
   NewIntVar("result",0);
   NewIntVar("timeout",0);
   NewStrVar("inputstr","");
+  NewStrVar("matchstr","");   // for 'waitregex' command (2005.10.7 yutaka)
 
   NewStrVar("param2",Param2);
   NewStrVar("param3",Param3);
@@ -1983,6 +1984,8 @@ WORD TTLUnlink()
   return 0;
 }
 
+
+
 WORD TTLWait(BOOL Ln)
 {
   TStrVal Str;
@@ -2050,6 +2053,27 @@ WORD TTLWait(BOOL Ln)
 
   return Err;
 }
+
+
+// 'waitregex'(wait regular expression): wait command with regular expression
+//
+// This command has almost same function of 'wait' command. Additionally 'waitregex' can search 
+// the keyword with regular expression. TeraTerm uses a regex library that is called 'Oniguruma'.
+// cf. http://www.geocities.jp/kosako3/oniguruma/
+//
+// (2005.10.5 yutaka)
+WORD TTLWaitRegex(BOOL Ln)
+{
+	WORD ret;
+
+	ret = TTLWait(Ln);
+
+	RegexActionType = REGEX_WAIT; // regex enabled
+
+	return (ret);
+}
+
+
 
 WORD TTLWaitEvent()
 {
@@ -2383,6 +2407,7 @@ int ExecCmnd()
       case RsvStrScan:	  Err = TTLStrScan(); break;
       case RsvTestLink:	  Err = TTLTestLink(); break;
       case RsvUnlink:	  Err = TTLUnlink(); break;
+      case RsvWaitRegex:	  Err = TTLWaitRegex(FALSE); break;  // add 'waitregex' (2005.10.5 yutaka)
       case RsvWait:	  Err = TTLWait(FALSE); break;
       case RsvWaitEvent:  Err = TTLWaitEvent(); break;
       case RsvWaitLn:	  Err = TTLWait(TRUE); break;
@@ -2468,6 +2493,17 @@ void Exec()
   Err = ExecCmnd();
   if (Err>0) DispErr(Err);
   UnlockVar();
+}
+
+// 正規表現でマッチした文字列を記録する
+// (2005.10.7 yutaka)
+void SetMatchStr(PCHAR Str)
+{
+  WORD VarType, VarId;
+
+  if (CheckVar("matchstr",&VarType,&VarId) &&
+      (VarType==TypString))
+    SetStrVal(VarId,Str);
 }
 
 void SetInputStr(PCHAR Str)
