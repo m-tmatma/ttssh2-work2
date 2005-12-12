@@ -19,6 +19,12 @@
 #else
   #include "dlg_re16.h"
 #endif
+
+// Oniguruma: Regular expression library
+#define ONIG_EXTERN extern
+#include "oniguruma.h"
+#undef ONIG_EXTERN
+
 #ifdef INET6
 #include <winsock2.h>
 static char FAR * ProtocolFamilyList[] = { "UNSPEC", "IPv6", "IPv4", NULL };
@@ -336,7 +342,10 @@ BOOL CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
 	ShowDlgItem(Dialog,IDC_WINSCROLL1,IDC_WINSCROLL3);
 	SetRB(Dialog,ts->EnableScrollBuff,IDC_WINSCROLL1,IDC_WINSCROLL1);
 	SetDlgItemInt(Dialog,IDC_WINSCROLL2,ts->ScrollBuffSize,FALSE);
-	SendDlgItemMessage(Dialog, IDC_WINSCROLL2, EM_LIMITTEXT,5, 0);
+
+	// 入力最大桁数を 5 から 8 へ拡張 (2004.11.28 yutaka)
+	SendDlgItemMessage(Dialog, IDC_WINSCROLL2, EM_LIMITTEXT, 8, 0);
+
 	if ( ts->EnableScrollBuff==0 )
 	  DisableDlgItem(Dialog,IDC_WINSCROLL2,IDC_WINSCROLL3);
 	for (i = 0 ; i <= 1 ; i++)
@@ -350,6 +359,11 @@ BOOL CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
 	  ts->TmpColor[2][i*3]	 = GetRValue(ts->VTBlinkColor[i]);
 	  ts->TmpColor[2][i*3+1] = GetGValue(ts->VTBlinkColor[i]);
 	  ts->TmpColor[2][i*3+2] = GetBValue(ts->VTBlinkColor[i]);
+      /* begin - ishizaki */
+	  ts->TmpColor[3][i*3]	 = GetRValue(ts->URLColor[i]);
+	  ts->TmpColor[3][i*3+1] = GetGValue(ts->URLColor[i]);
+	  ts->TmpColor[3][i*3+2] = GetBValue(ts->URLColor[i]);
+      /* end - ishizaki */
 	}
 	ShowDlgItem(Dialog,IDC_WINATTRTEXT,IDC_WINATTR);
 	SendDlgItemMessage(Dialog, IDC_WINATTR, CB_ADDSTRING,
@@ -358,6 +372,10 @@ BOOL CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
 			   0, (LPARAM)"Bold");
 	SendDlgItemMessage(Dialog, IDC_WINATTR, CB_ADDSTRING,
 			   0, (LPARAM)"Blink");
+    /* begin - ishizaki */
+	SendDlgItemMessage(Dialog, IDC_WINATTR, CB_ADDSTRING,
+			   0, (LPARAM)"URL");
+    /* end - ishizaki */
 	SendDlgItemMessage(Dialog, IDC_WINATTR, CB_SETCURSEL,
 			   0,0);
       }
@@ -428,9 +446,18 @@ BOOL CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
 		  RGB(ts->TmpColor[2][i*3],
 		      ts->TmpColor[2][i*3+1],
 		      ts->TmpColor[2][i*3+2]);
+        /* begin - ishizaki */
+		ts->URLColor[i] =
+		  RGB(ts->TmpColor[3][i*3],
+		      ts->TmpColor[3][i*3+1],
+		      ts->TmpColor[3][i*3+2]);
+        /* end - ishizaki */
 		ts->VTColor[i] = GetNearestColor(DC,ts->VTColor[i]);
 		ts->VTBoldColor[i] = GetNearestColor(DC,ts->VTBoldColor[i]);
 		ts->VTBlinkColor[i] = GetNearestColor(DC,ts->VTBlinkColor[i]);
+        /* begin - ishizaki */
+		ts->URLColor[i] = GetNearestColor(DC,ts->URLColor[i]);
+        /* end - ishizaki */
 	      }
 	    }
 	    else {
@@ -621,9 +648,11 @@ BOOL CALLBACK KeybDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
   return FALSE;
 }
 
+// ボーレートの上限を拡張した (2005.11.30 yutaka)
 static PCHAR far BaudList[] =
   {"110","300","600","1200","2400","4800","9600",
-   "14400","19200","38400","57600","115200",NULL};
+   "14400","19200","38400","57600","115200",
+   "230400", "460800", "921600", NULL};
 static PCHAR far DataList[] = {"7 bit","8 bit",NULL};
 static PCHAR far ParityList[] = {"even","odd","none",NULL};
 static PCHAR far StopList[] = {"1 bit","2 bit",NULL};
@@ -749,8 +778,8 @@ BOOL CALLBACK TCPIPDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
       SendDlgItemMessage(Dialog, IDC_TCPIPTERMTYPE, EM_LIMITTEXT,
 			 sizeof(ts->TermType)-1, 0);
 
-      if ( ts->Telnet==0 )
-	DisableDlgItem(Dialog,IDC_TCPIPTERMTYPELABEL,IDC_TCPIPTERMTYPE);
+      // SSH接続のときにも TERM を送るので、telnetが無効でも disabled にしない。(2005.11.3 yutaka)
+      EnableDlgItem(Dialog,IDC_TCPIPTERMTYPELABEL,IDC_TCPIPTERMTYPE);
 
       return TRUE;
 
@@ -902,8 +931,11 @@ BOOL CALLBACK TCPIPDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
 	    if (ts!=NULL)
 	      SetDlgItemInt(Dialog,IDC_TCPIPPORT,ts->TelPort,FALSE);
 	  }
-	  else
-	    DisableDlgItem(Dialog,IDC_TCPIPTERMTYPELABEL,IDC_TCPIPTERMTYPE);
+	  else 
+	  {
+	    // SSH接続のときにも TERM を送るので、telnetが無効でも disabled にしない。(2005.11.3 yutaka)
+	    EnableDlgItem(Dialog,IDC_TCPIPTERMTYPELABEL,IDC_TCPIPTERMTYPE);
+	  }
 	  break;
 
 	case IDC_TCPIPHELP:
@@ -1184,6 +1216,266 @@ BOOL CALLBACK DirDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
   return FALSE;
 }
 
+// 実行ファイルからバージョン情報を得る (2005.2.28 yutaka)
+static void get_file_version(char *exefile, int *major, int *minor, int *release, int *build)
+{
+	typedef struct {
+		WORD wLanguage;
+		WORD wCodePage;
+	} LANGANDCODEPAGE, *LPLANGANDCODEPAGE;
+	LPLANGANDCODEPAGE lplgcode;
+	UINT unLen;
+	DWORD size;
+	char *buf = NULL;
+	BOOL ret;
+	int i;
+	char fmt[80];
+	char *pbuf;
+
+	size = GetFileVersionInfoSize(exefile, NULL);
+	if (size == 0) {
+		goto error;
+	}
+	buf = malloc(size);
+	ZeroMemory(buf, size);
+
+	if (GetFileVersionInfo(exefile, 0, size, buf) == FALSE) {
+		goto error;
+	}
+
+	ret = VerQueryValue(buf,
+			"\\VarFileInfo\\Translation", 
+			(LPVOID *)&lplgcode, &unLen);
+	if (ret == FALSE)
+		goto error;
+
+	for (i = 0 ; i < (int)(unLen / sizeof(LANGANDCODEPAGE)) ; i++) {
+		_snprintf(fmt, sizeof(fmt), "\\StringFileInfo\\%04x%04x\\FileVersion", 
+			lplgcode[i].wLanguage, lplgcode[i].wCodePage);
+		VerQueryValue(buf, fmt, &pbuf, &unLen);
+		if (unLen > 0) { // get success
+			int n, a, b, c, d;
+
+			n = sscanf(pbuf, "%d, %d, %d, %d", &a, &b, &c, &d);
+			if (n == 4) { // convert success
+				*major = a;
+				*minor = b;
+				*release = c;
+				*build = d;
+				break;
+			}
+		}
+	}
+
+	free(buf);
+	return;
+
+error:
+	free(buf);
+	*major = *minor = *release = *build = 0;
+}
+
+
+//
+// static textに書かれたURLをダブルクリックすると、ブラウザが起動するようにする。
+// based on sakura editor 1.5.2.1 # CDlgAbout.cpp
+// (2005.4.7 yutaka)
+//
+
+typedef struct {
+	WNDPROC proc;
+	BOOL mouseover;
+	HFONT font;
+	HWND hWnd;
+	int timer_done;
+} url_subclass_t;
+
+static url_subclass_t author_url_class, forum_url_class;
+
+// static textに割り当てるプロシージャ
+static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
+{
+	url_subclass_t *parent = (url_subclass_t *)GetWindowLongPtr( hWnd, GWLP_USERDATA );
+	HDC hdc;
+	POINT pt;
+	RECT rc;
+
+	switch (msg) {
+#if 0
+	case WM_SETCURSOR:
+		{
+		// カーソル形状変更
+		HCURSOR hc;
+
+		hc = (HCURSOR)LoadImage(NULL,
+				MAKEINTRESOURCE(IDC_HAND),
+				IMAGE_CURSOR,
+				0,
+				0,
+				LR_DEFAULTSIZE | LR_SHARED);
+		if (hc != NULL) {
+			SetClassLongPtr(hWnd, GCLP_HCURSOR, (LONG_PTR)hc);
+		}
+		return (LRESULT)0;
+		}
+#endif
+
+	case WM_LBUTTONDBLCLK:
+		{
+		char url[128];
+
+		// get URL
+		SendMessage(hWnd, WM_GETTEXT , sizeof(url), (LPARAM)url);
+		// kick WWW browser
+	    ShellExecute(NULL, NULL, url, NULL, NULL,SW_SHOWNORMAL);
+		}
+		break;
+
+	case WM_MOUSEMOVE:
+		{
+		BOOL bHilighted;
+		pt.x = LOWORD( lParam );
+		pt.y = HIWORD( lParam );
+		GetClientRect( hWnd, &rc );
+		bHilighted = PtInRect( &rc, pt );
+
+		if (parent->mouseover != bHilighted) {
+			parent->mouseover = bHilighted;
+			InvalidateRect( hWnd, NULL, TRUE );
+			if (parent->timer_done == 0) {
+				parent->timer_done = 1;
+				SetTimer( hWnd, 1, 200, NULL );
+			}
+		}
+
+		}
+		break;
+
+	case WM_TIMER:
+		// URLの上にマウスカーソルがあるなら、システムカーソルを変更する。
+		if (author_url_class.mouseover || forum_url_class.mouseover) {
+			HCURSOR hc;
+			//SetCapture(hWnd);
+
+			hc = (HCURSOR)LoadImage(NULL,
+					MAKEINTRESOURCE(IDC_HAND),
+					IMAGE_CURSOR,
+					0,
+					0,
+					LR_DEFAULTSIZE | LR_SHARED);
+
+			SetSystemCursor(CopyCursor(hc), 32512 /* OCR_NORMAL */);    // 矢印
+			SetSystemCursor(CopyCursor(hc), 32513 /* OCR_IBEAM */);     // Iビーム
+
+		} else {
+			//ReleaseCapture();
+			// マウスカーソルを元に戻す。
+			SystemParametersInfo(SPI_SETCURSORS, 0, NULL, 0);
+
+		}
+
+		// カーソルがウィンドウ外にある場合にも WM_MOUSEMOVE を送る
+		GetCursorPos( &pt );
+		ScreenToClient( hWnd, &pt );
+		GetClientRect( hWnd, &rc );
+		if( !PtInRect( &rc, pt ) )
+			SendMessage( hWnd, WM_MOUSEMOVE, 0, MAKELONG( pt.x, pt.y ) );
+		break;
+
+	case WM_PAINT: 
+		{
+		// ウィンドウの描画
+		PAINTSTRUCT ps;
+		HFONT hFont;
+		HFONT hOldFont;
+		TCHAR szText[512];
+
+		hdc = BeginPaint( hWnd, &ps );
+
+		// 現在のクライアント矩形、テキスト、フォントを取得する
+		GetClientRect( hWnd, &rc );
+		GetWindowText( hWnd, szText, 512 );
+		hFont = (HFONT)SendMessage( hWnd, WM_GETFONT, (WPARAM)0, (LPARAM)0 );
+
+		// テキスト描画
+		SetBkMode( hdc, TRANSPARENT );
+		SetTextColor( hdc, parent->mouseover ? RGB( 0x84, 0, 0 ): RGB( 0, 0, 0xff ) );
+		hOldFont = (HFONT)SelectObject( hdc, (HGDIOBJ)hFont );
+		TextOut( hdc, 2, 0, szText, lstrlen( szText ) );
+		SelectObject( hdc, (HGDIOBJ)hOldFont );
+
+		// フォーカス枠描画
+		if( GetFocus() == hWnd )
+			DrawFocusRect( hdc, &rc );
+
+		EndPaint( hWnd, &ps );
+		return 0;
+		}
+
+	case WM_ERASEBKGND:
+		hdc = (HDC)wParam;
+		GetClientRect( hWnd, &rc );
+
+		// 背景描画
+		if( parent->mouseover ){
+			// ハイライト時背景描画
+			SetBkColor( hdc, RGB( 0xff, 0xff, 0 ) );
+			ExtTextOut( hdc, 0, 0, ETO_OPAQUE, &rc, NULL, 0, NULL );
+		}else{
+			// 親にWM_CTLCOLORSTATICを送って背景ブラシを取得し、背景描画する
+			HBRUSH hbr;
+			HBRUSH hbrOld;
+			hbr = (HBRUSH)SendMessage( GetParent( hWnd ), WM_CTLCOLORSTATIC, wParam, (LPARAM)hWnd );
+			hbrOld = (HBRUSH)SelectObject( hdc, hbr );
+			FillRect( hdc, &rc, hbr );
+			SelectObject( hdc, hbrOld );
+		}
+		return (LRESULT)1;
+
+	case WM_DESTROY:
+		// 後始末
+		SetWindowLongPtr( hWnd, GWLP_WNDPROC, (LONG_PTR)parent->proc );
+		if( parent->font != NULL )
+			DeleteObject( parent->font );
+
+		// マウスカーソルを元に戻す。
+		SystemParametersInfo(SPI_SETCURSORS, 0, NULL, 0);
+		return (LRESULT)0;
+	}
+
+	return CallWindowProc( parent->proc, hWnd, msg, wParam, lParam );
+}
+
+// static textにプロシージャを設定し、サブクラス化する。
+static void do_subclass_window(HWND hWnd, url_subclass_t *parent)
+{
+	HFONT hFont;
+	LOGFONT lf;
+	LONG_PTR lptr;
+
+	//SetCapture(hWnd);
+
+	if (!IsWindow(hWnd))
+		return;
+
+	// 親のプロシージャをサブクラスから参照できるように、ポインタを登録しておく。
+	lptr = SetWindowLongPtr( hWnd, GWLP_USERDATA, (LONG_PTR)parent );
+	// サブクラスのプロシージャを登録する。
+	parent->proc = (WNDPROC)SetWindowLongPtr( hWnd, GWLP_WNDPROC, (LONG_PTR)UrlWndProc);
+
+	// 下線を付ける
+	hFont = (HFONT)SendMessage( hWnd, WM_GETFONT, (WPARAM)0, (LPARAM)0 );
+	GetObject( hFont, sizeof(lf), &lf );
+	lf.lfUnderline = TRUE;
+	parent->font = hFont = CreateFontIndirect( &lf ); // 不要になったら削除すること
+	if (hFont != NULL)
+		SendMessage( hWnd, WM_SETFONT, (WPARAM)hFont, (LPARAM)FALSE );
+
+	parent->hWnd = hWnd;
+	parent->timer_done = 0;
+}
+
+
 #ifdef WATCOM
   #pragma off (unreferenced);
 #endif
@@ -1192,21 +1484,47 @@ BOOL CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM lParam)
   #pragma on (unreferenced);
 #endif
 {
-  switch (Message) {
-    case WM_INITDIALOG:
-      return TRUE;
-    case WM_COMMAND:
-      switch (LOWORD(wParam)) {
-	case IDOK:
-	  EndDialog(Dialog, 1);
-	  return TRUE;
+	int a, b, c, d;
+	char buf[30];
 
-	case IDCANCEL:
-	  EndDialog(Dialog, 0);
-	  return TRUE;
-      }
-  }
-  return FALSE;
+	switch (Message) {
+	case WM_INITDIALOG:
+		// TeraTermのバージョンを設定する (2005.2.28 yutaka)
+		// __argv[0]では WinExec() したプロセスから参照できないようなので削除。(2005.3.14 yutaka)
+		get_file_version("ttermpro.exe", &a, &b, &c, &d);
+		_snprintf(buf, sizeof(buf), "Version %d.%d", a, b);
+		SendMessage(GetDlgItem(Dialog, IDC_TT_VERSION), WM_SETTEXT, 0, (LPARAM)buf);
+
+		// Onigurumaのバージョンを設定する 
+		// バージョンの取得は onig_version() を呼び出すのが適切だが、そのためだけにライブラリを
+		// リンクしたくなかったので、以下のようにした。Onigurumaのバージョンが上がった場合、
+		// ビルドエラーとなるかもしれない。
+		// (2005.10.8 yutaka)
+		_snprintf(buf, sizeof(buf), "Oniguruma %d.%d.%d",
+					ONIGURUMA_VERSION_MAJOR,
+					ONIGURUMA_VERSION_MINOR,
+					ONIGURUMA_VERSION_TEENY);
+		SendMessage(GetDlgItem(Dialog, IDC_ONIGURUMA_LABEL), WM_SETTEXT, 0, (LPARAM)buf);
+
+		// static textをサブクラス化する。ただし、tabstop, notifyプロパティを有効にしておかないと
+		// メッセージが拾えない。(2005.4.5 yutaka)
+		do_subclass_window(GetDlgItem(Dialog, IDC_AUTHOR_URL), &author_url_class);
+		do_subclass_window(GetDlgItem(Dialog, IDC_FORUM_URL), &forum_url_class);
+		return TRUE;
+
+	case WM_COMMAND:
+		switch (LOWORD(wParam)) {
+		case IDOK:
+			EndDialog(Dialog, 1);
+			return TRUE;
+
+		case IDCANCEL:
+			EndDialog(Dialog, 0);
+			return TRUE;
+		}
+		break;
+	}
+	return FALSE;
 }
 
 static PCHAR far LangList[] = {"English","Japanese","Russian",NULL};
@@ -1688,3 +2006,34 @@ int CALLBACK LibMain(HANDLE hInstance, WORD wDataSegment,
   return (1);
 }
 #endif
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.9  2005/11/03 13:34:26  yutakakn
+ *   ・teraterm.iniを保存するときに書き込みできるかどうかの判別を追加した。
+ *   ・TCP/IP setupダイアログの"Term type"を常に有効とするようにした。
+ *
+ * Revision 1.8  2005/10/08 14:56:06  yutakakn
+ * Onigurumaのバージョン情報表示を少し変更。
+ *
+ * Revision 1.7  2005/10/05 17:01:41  yutakakn
+ * Onigurumaのバージョンをバージョン情報に追加。
+ *
+ * Revision 1.6  2005/04/07 14:13:23  yutakakn
+ * ・Additional settingsでのマウスカーソル種別を設定時に変更されるようにした。
+ * ・バージョン情報ダイアログのURLをダブルクリックすると、ブラウザが起動されるようにした。
+ *
+ * Revision 1.5  2005/04/03 13:42:07  yutakakn
+ * URL文字列をダブルクリックするとブラウザが起動するしかけを追加（石崎氏パッチがベース）。
+ *
+ * Revision 1.4  2005/03/14 13:29:40  yutakakn
+ * 2つめ以降のプロセスで、TeraTermバージョンが正しく取得されない問題への対処。
+ *
+ * Revision 1.3  2005/02/28 14:30:35  yutakakn
+ * バージョンダイアログに表示するTeraTermのバージョンを、ttermpro.exeの
+ * バージョン情報から取得するようにした。
+ *
+ * Revision 1.2  2004/11/28 13:14:51  yutakakn
+ * スクロールバッファの入力桁数を5から8へ拡張した。
+ * 
+ */

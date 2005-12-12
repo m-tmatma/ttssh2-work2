@@ -52,44 +52,93 @@ END
 // Dialog
 //
 
-IDD_COMMENT_DIALOG DIALOGEX 0, 0, 264, 23
+IDD_COMMENT_DIALOG DIALOGEX 0, 0, 239, 19
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Comment to Log"
 FONT 10, "System", 400, 0, 0x80
 BEGIN
-    DEFPUSHBUTTON   "OK",IDOK,215,6,43,12
-    EDITTEXT        IDC_EDIT_COMMENT,6,6,197,12,ES_AUTOHSCROLL
+    DEFPUSHBUTTON   "OK",IDOK,201,3,32,12
+    EDITTEXT        IDC_EDIT_COMMENT,6,3,189,12,ES_AUTOHSCROLL
 END
 
-IDD_EXTERNAL_SETUP DIALOGEX 0, 0, 329, 183
+IDD_TABSHEET_GENERAL DIALOGEX 0, 0, 274, 139
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD | WS_SYSMENU
+FONT 8, "Tahoma", 400, 0, 0x0
+BEGIN
+    CONTROL         "EnableContinuedLineCopy",IDC_LINECOPY,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,7,4,99,10
+    LTEXT           "MouseCursor",IDC_STATIC,116,5,48,8
+    LISTBOX         IDC_MOUSE_CURSOR,166,4,48,32,LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Delimiter Characters",IDC_STATIC,6,52,73,8
+    EDITTEXT        IDC_DELIM_LIST,87,50,130,12,ES_AUTOHSCROLL
+    LTEXT           "ANSI color",IDC_STATIC,8,68,43,8
+    LISTBOX         IDC_ANSI_COLOR,8,82,28,48,LBS_NOINTEGRALHEIGHT | 
+                    WS_VSCROLL | WS_TABSTOP
+    LTEXT           "Red",IDC_STATIC,43,86,14,8
+    LTEXT           "Green",IDC_STATIC,43,100,22,8
+    LTEXT           "Blue",IDC_STATIC,43,115,14,8
+    EDITTEXT        IDC_COLOR_RED,67,83,20,14,ES_AUTOHSCROLL | ES_NUMBER
+    EDITTEXT        IDC_COLOR_GREEN,67,98,20,14,ES_AUTOHSCROLL | ES_NUMBER
+    EDITTEXT        IDC_COLOR_BLUE,67,115,20,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "SAMPLE TEXT",IDC_SAMPLE_COLOR,93,100,44,8
+    DEFPUSHBUTTON   "OK",IDOK,227,2,33,14
+    PUSHBUTTON      "Cancel",IDCANCEL,227,22,33,14
+    CONTROL         "DisableMouseRButtonPaste",IDC_DISABLE_PASTE_RBUTTON,
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,147,71,102,10
+    CONTROL         "EnableClickableURL",IDC_CLICKABLE_URL,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,147,88,100,10
+END
+
+IDD_BROADCAST_DIALOG DIALOGEX 0, 0, 252, 40
 STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "External Setup"
+CAPTION "Tera Term: Broadcast command"
 FONT 10, "System", 400, 0, 0x80
 BEGIN
-    DEFPUSHBUTTON   "OK",IDOK,272,7,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,272,24,50,14
-    CONTROL         "EnableContinuedLineCopy",IDC_LINECOPY,"Button",
-                    BS_AUTOCHECKBOX | WS_TABSTOP,15,14,99,10
-    LISTBOX         IDC_MOUSE_CURSOR,193,15,48,32,LBS_NOINTEGRALHEIGHT | 
-                    WS_VSCROLL | WS_TABSTOP
-    LTEXT           "MouseCursor",IDC_STATIC,140,16,48,8
-    EDITTEXT        IDC_ALPHA_BLEND,58,35,28,12,ES_AUTOHSCROLL | ES_NUMBER
-    LTEXT           "AlphaBlend",IDC_STATIC,16,37,38,8
-    LTEXT           "Cygwin Install Path",IDC_STATIC,16,59,68,8
-    EDITTEXT        IDC_CYGWIN_PATH,83,57,64,12,ES_AUTOHSCROLL
-    PUSHBUTTON      "...",IDC_SELECT_FILE,152,57,18,13
-    LTEXT           "Delimiter Characters",IDC_STATIC,17,83,77,8
-    EDITTEXT        IDC_DELIM_LIST,99,81,130,12,ES_AUTOHSCROLL
-    LTEXT           "ANSI color",IDC_STATIC,19,108,43,8
-    LISTBOX         IDC_ANSI_COLOR,19,121,28,48,LBS_NOINTEGRALHEIGHT | 
-                    WS_VSCROLL | WS_TABSTOP
-    LTEXT           "Red",IDC_STATIC,54,125,14,8
-    EDITTEXT        IDC_COLOR_RED,78,122,24,14,ES_AUTOHSCROLL | ES_NUMBER
-    LTEXT           "Blue",IDC_STATIC,54,154,14,8
-    LTEXT           "Green",IDC_STATIC,54,139,22,8
-    EDITTEXT        IDC_COLOR_GREEN,78,137,24,14,ES_AUTOHSCROLL | ES_NUMBER
-    EDITTEXT        IDC_COLOR_BLUE,78,154,24,14,ES_AUTOHSCROLL | ES_NUMBER
-    LTEXT           "SAMPLE TEXT",IDC_SAMPLE_COLOR,113,139,44,8
+    DEFPUSHBUTTON   "Submit",IDOK,205,2,40,14
+    EDITTEXT        IDC_COMMAND_EDIT,5,2,187,12,ES_AUTOHSCROLL
+    CONTROL         "Enter key",IDC_ENTERKEY_CHECK,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,149,21,44,10
+    DEFPUSHBUTTON   "Close",IDCANCEL,205,21,40,14
+    CONTROL         "CRLF",IDC_RADIO_CRLF,"Button",BS_AUTORADIOBUTTON,47,21,
+                    33,10
+    GROUPBOX        "",IDC_ENTERGROUP,42,15,102,18
+    CONTROL         "CR",IDC_RADIO_CR,"Button",BS_AUTORADIOBUTTON,81,21,25,
+                    10
+    CONTROL         "LF",IDC_RADIO_LF,"Button",BS_AUTORADIOBUTTON,112,21,23,
+                    10
+END
+
+IDD_ADDITIONAL_SETUPTAB DIALOGEX 0, 0, 298, 180
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Tera Term: Additional settings"
+FONT 8, "Tahoma", 400, 0, 0x0
+BEGIN
+    CONTROL         "",IDC_SETUP_TAB,"SysTabControl32",WS_TABSTOP,7,7,284,
+                    166
+END
+
+IDD_TABSHEET_VISUAL DIALOGEX 0, 0, 186, 95
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD | WS_SYSMENU
+FONT 8, "Tahoma", 400, 0, 0x0
+BEGIN
+    LTEXT           "AlphaBlend",IDC_STATIC,17,17,38,8
+    EDITTEXT        IDC_ALPHA_BLEND,61,15,28,12,ES_AUTOHSCROLL | ES_NUMBER
+    CONTROL         "Eterm lookfeel",IDC_ETERM_LOOKFEEL,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,18,39,63,10
+    DEFPUSHBUTTON   "OK",IDOK,129,7,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,129,24,50,14
+END
+
+IDD_TABSHEET_LOG DIALOGEX 0, 0, 186, 95
+STYLE DS_SETFONT | DS_FIXEDSYS | DS_CONTROL | WS_CHILD | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    LTEXT           "View Log Editor",IDC_VIEWLOG_LABEL,19,16,53,8
+    EDITTEXT        IDC_VIEWLOG_EDITOR,20,27,77,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_VIEWLOG_PATH,102,28,15,10
+    DEFPUSHBUTTON   "OK",IDOK,129,7,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,129,24,50,14
 END
 
 
@@ -105,15 +154,44 @@ BEGIN
     BEGIN
         LEFTMARGIN, 7
         TOPMARGIN, 7
-        BOTTOMMARGIN, 21
+        BOTTOMMARGIN, 17
     END
 
-    IDD_EXTERNAL_SETUP, DIALOG
+    IDD_TABSHEET_GENERAL, DIALOG
+    BEGIN
+        RIGHTMARGIN, 267
+        BOTTOMMARGIN, 137
+    END
+
+    IDD_BROADCAST_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 8
+        RIGHTMARGIN, 245
+        BOTTOMMARGIN, 37
+    END
+
+    IDD_ADDITIONAL_SETUPTAB, DIALOG
     BEGIN
         LEFTMARGIN, 7
-        RIGHTMARGIN, 322
+        RIGHTMARGIN, 291
         TOPMARGIN, 7
-        BOTTOMMARGIN, 176
+        BOTTOMMARGIN, 173
+    END
+
+    IDD_TABSHEET_VISUAL, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 179
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 88
+    END
+
+    IDD_TABSHEET_LOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 179
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 88
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -130,17 +208,6 @@ END
 LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 #pragma code_page(1252)
 #endif //_WIN32
-
-/////////////////////////////////////////////////////////////////////////////
-//
-// Icon
-//
-
-// Icon with lowest ID value placed first to ensure application icon
-// remains consistent on all systems.
-IDI_TTERM               ICON                    "..\\common\\teraterm.ico"
-IDI_VT                  ICON                    "..\\common\\vt.ico"
-IDI_TEK                 ICON                    "..\\common\\tek.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -195,6 +262,67 @@ BEGIN
     DEFPUSHBUTTON   "Cancel",2,56,58,30,14
 END
 
+IDD_TABSHEET_CYGWIN DIALOGEX 0, 0, 257, 152
+STYLE DS_SETFONT | DS_CONTROL | WS_CHILD | WS_SYSMENU
+FONT 8, "Tahoma", 400, 0, 0x0
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,200,7,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,200,24,50,14
+    LTEXT           "Cygwin Install Path",IDC_STATIC,12,17,64,8
+    EDITTEXT        IDC_CYGWIN_PATH,76,15,64,12,ES_AUTOHSCROLL
+    PUSHBUTTON      "...",IDC_SELECT_FILE,146,15,13,10
+    LTEXT           "TERM",IDC_STATIC,23,57,19,8
+    EDITTEXT        IDC_TERM_EDIT,52,54,167,14,ES_AUTOHSCROLL
+    LTEXT           "TERM_TYPE",IDC_STATIC,21,76,39,8
+    EDITTEXT        IDC_TERM_TYPE,66,74,40,14,ES_AUTOHSCROLL
+    LTEXT           "PORT START",IDC_STATIC,21,95,42,8
+    EDITTEXT        IDC_PORT_START,65,94,34,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "PORT RANGE",IDC_STATIC,20,115,44,8
+    EDITTEXT        IDC_PORT_RANGE,65,113,34,14,ES_AUTOHSCROLL | ES_NUMBER
+    LTEXT           "SHELL",IDC_STATIC,127,76,20,8
+    EDITTEXT        IDC_SHELL,151,74,54,14,ES_AUTOHSCROLL
+    GROUPBOX        "CygTerm",IDC_STATIC,15,43,225,101
+    LTEXT           "ENV_1",IDC_STATIC,127,98,22,8
+    EDITTEXT        IDC_ENV1,151,95,79,14,ES_AUTOHSCROLL
+    LTEXT           "ENV_2",IDC_STATIC,126,118,22,8
+    EDITTEXT        IDC_ENV2,152,115,78,14,ES_AUTOHSCROLL
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_FILETRANSDLG, DIALOG
+    BEGIN
+        BOTTOMMARGIN, 73
+    END
+
+    IDD_TABSHEET_CYGWIN, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 250
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 145
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_TTERM               ICON                    "..\\common\\teraterm.ico"
+IDI_VT                  ICON                    "..\\common\\vt.ico"
+IDI_TEK                 ICON                    "..\\common\\tek.ico"
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -202,8 +330,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 2,3,0,0
- PRODUCTVERSION 2,3,0,0
+ FILEVERSION 4,25,0,0
+ PRODUCTVERSION 4,25,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -218,14 +346,14 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "T. Teranishi"
+            VALUE "CompanyName", "Y.Hirata, T. Teranishi"
             VALUE "FileDescription", "Tera Term Pro"
-            VALUE "FileVersion", "2, 3, 0, 0"
+            VALUE "FileVersion", "4, 25, 0, 0"
             VALUE "InternalName", "TTERMPRO"
-            VALUE "LegalCopyright", "Copyright (C) T. Teranishi 1994-1998"
+            VALUE "LegalCopyright", "(C)Y.Hirata 2004-2005, (C)T. Teranishi 1994-1998"
             VALUE "OriginalFilename", "TTERMPRO.EXE"
             VALUE "ProductName", "Tera Term Pro"
-            VALUE "ProductVersion", "2, 3, 0, 0"
+            VALUE "ProductVersion", "4, 25, 0, 0"
         END
     END
     BLOCK "VarFileInfo"
@@ -245,10 +373,12 @@ BEGIN
     POPUP "&File"
     BEGIN
         MENUITEM "&New connection...\tAlt+N",   ID_FILE_NEWCONNECTION
+        MENUITEM "&Duplicate session\tAlt+D",   ID_FILE_DUPLICATESESSION
         MENUITEM "Cy&gwin connection\tAlt+G",   ID_FILE_CYGWINCONNECTION
         MENUITEM SEPARATOR
         MENUITEM "&Log...",                     ID_FILE_LOG
         MENUITEM "Comment to Log...",           ID_FILE_COMMENTTOLOG
+        MENUITEM "View Log",                    ID_FILE_VIEWLOG
         MENUITEM "&Send file...",               ID_FILE_SENDFILE
         POPUP "&Transfer"
         BEGIN
@@ -282,6 +412,9 @@ BEGIN
         END
         MENUITEM "&Change directory...",        ID_FILE_CHANGEDIR
         MENUITEM SEPARATOR
+        MENUITEM "TeraTerm &Menu",              ID_FILE_TERATERMMENU
+        MENUITEM "&LogMeTT",                    ID_FILE_LOGMEIN
+        MENUITEM SEPARATOR
         MENUITEM "&Print...\tAlt+P",            ID_FILE_PRINT2
         MENUITEM SEPARATOR
         MENUITEM "&Disconnect",                 ID_FILE_DISCONNECT
@@ -299,7 +432,6 @@ BEGIN
         MENUITEM "Clear &buffer",               ID_EDIT_CLEARBUFFER
         MENUITEM SEPARATOR
         MENUITEM "Select &all",                 ID_EDIT_SELECTALL
-        MENUITEM "&External setup",             ID_EDIT_EXTERNALSETUP
     END
     POPUP "&Setup"
     BEGIN
@@ -310,6 +442,7 @@ BEGIN
         MENUITEM "Serial &port...",             ID_SETUP_SERIALPORT
         MENUITEM "T&CP/IP...",                  ID_SETUP_TCPIP
         MENUITEM "&General...",                 ID_SETUP_GENERAL
+        MENUITEM "Additional settings",         ID_SETUP_ADDITIONALSETTINGS
         MENUITEM SEPARATOR
         MENUITEM "&Save setup...",              ID_SETUP_SAVE
         MENUITEM "&Restore setup...",           ID_SETUP_RESTORE
@@ -323,6 +456,7 @@ BEGIN
         MENUITEM "Are you &there\tAlt+T",       ID_CONTROL_AREYOUTHERE
         MENUITEM "&Send break\tAlt+B",          ID_CONTROL_SENDBREAK
         MENUITEM "Reset &port",                 ID_CONTROL_RESETPORT
+        MENUITEM "Broadcast command",           ID_CONTROL_BROADCASTCOMMAND
         MENUITEM SEPARATOR
         MENUITEM "&Open TEK",                   ID_CONTROL_OPENTEK
         MENUITEM "&Close TEK",                  ID_CONTROL_CLOSETEK
@@ -387,24 +521,16 @@ BEGIN
     "P",            ID_ACC_PRINT,           VIRTKEY, ALT, NOINVERT
     "B",            ID_ACC_SENDBREAK,       VIRTKEY, ALT, NOINVERT
     "G",            ID_FILE_CYGWINCONNECTION, VIRTKEY, ALT, NOINVERT
+    "D",            ID_FILE_DUPLICATESESSION, VIRTKEY, ALT, NOINVERT
 END
 
 
 /////////////////////////////////////////////////////////////////////////////
 //
-// DESIGNINFO
+// RT_MANIFEST
 //
 
-#ifdef APSTUDIO_INVOKED
-GUIDELINES DESIGNINFO 
-BEGIN
-    IDD_FILETRANSDLG, DIALOG
-    BEGIN
-        BOTTOMMARGIN, 73
-    END
-END
-#endif    // APSTUDIO_INVOKED
-
+1                       RT_MANIFEST             "teraterm.manifest"
 #endif    // âpåÍ (ïƒçë) resources
 /////////////////////////////////////////////////////////////////////////////
 

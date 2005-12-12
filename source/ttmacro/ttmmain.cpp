@@ -19,6 +19,8 @@
 
 #include "ttmmain.h"
 
+#include "ttmbuff.h"
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #undef THIS_FILE
@@ -59,12 +61,18 @@ BOOL CCtrlWindow::OnIdle()
   if (OutLen>0)
   {
     DDESend();
+
+	// Windows2000/XP（シングルプロセッサ環境）においてマクロ実行中にCPU使用率が100%になってしまう
+	// 現象への暫定処置。ttermpro.exeへのDDE送信後に無条件に100ミリ秒のスリープを追加。
+	// (2005.5.25 yutaka)
+	Sleep(100);
     return TRUE;
   }
   else if (! Pause &&
     (TTLStatus==IdTTLRun))
   {
     Exec();
+	Invalidate(TRUE);
     return TRUE;
   }
   else if (TTLStatus==IdTTLWait)
@@ -282,16 +290,22 @@ BOOL CCtrlWindow::OnEraseBkgnd(CDC* pDC)
 // for icon drawing in Win NT 3.5
 void CCtrlWindow::OnPaint()
 {
-  int OldMapMode;
-  CPaintDC dc(this);
+	int OldMapMode;
+	CPaintDC dc(this);
+	char buf[128];
 
-  OldMapMode = dc.GetMapMode();
-  dc.SetMapMode(MM_TEXT);
-  
-  if (!IsIconic()) return;
-  SendMessage(WM_ICONERASEBKGND,(UINT)(dc.m_hDC));
-  dc.DrawIcon(0, 0, m_hIcon);
-  dc.SetMapMode(OldMapMode);
+	// line number (2005.7.18 yutaka)
+	// added line buffer (2005.7.22 yutaka)
+	_snprintf(buf, sizeof(buf), "%d:%s", GetLineNo(), GetLineBuffer());
+	SetDlgItemText(IDC_LINENO, buf);
+
+	OldMapMode = dc.GetMapMode();
+	dc.SetMapMode(MM_TEXT);
+
+	if (!IsIconic()) return;
+	SendMessage(WM_ICONERASEBKGND,(UINT)(dc.m_hDC));
+	dc.DrawIcon(0, 0, m_hIcon);
+	dc.SetMapMode(OldMapMode);
 }
 
 // for icon drawing in Win NT 3.5
