@@ -15,9 +15,10 @@ TStrVal LineBuff;
 WORD LinePtr;
 WORD LineLen;
 
-#define MaxNumOfIntVar (LONG)128
-#define MaxNumOfStrVar (LONG)128
-#define MaxNumOfLabVar (LONG)256
+// 変数の個数を128->256、ラベルの個数を256->512へ拡張した。(2006.2.1 yutaka)
+#define MaxNumOfIntVar (LONG)128*2
+#define MaxNumOfStrVar (LONG)128*2
+#define MaxNumOfLabVar (LONG)256*2
 
 #define IntVarIdOff (LONG)0
 #define StrVarIdOff (IntVarIdOff+MaxNumOfIntVar)
@@ -183,8 +184,10 @@ BOOL CheckReservedWord(PCHAR Str, LPWORD WordId)
   else if (stricmp(Str,"next")==0) *WordId = RsvNext;
   else if (stricmp(Str,"passwordbox")==0) *WordId = RsvPasswordBox;
   else if (stricmp(Str,"pause")==0) *WordId = RsvPause;
+  else if (stricmp(Str,"mpause")==0) *WordId = RsvMilliPause;
   else if (stricmp(Str,"quickvanrecv")==0) *WordId = RsvQuickVANRecv;
   else if (stricmp(Str,"quickvansend")==0) *WordId = RsvQuickVANSend;
+  else if (stricmp(Str,"random")==0) *WordId = RsvRandom;  // add 'random' (2006.2.11 yutaka)
   else if (stricmp(Str,"recvln")==0) *WordId = RsvRecvLn;
   else if (stricmp(Str,"restoresetup")==0) *WordId = RsvRestoreSetup;
   else if (stricmp(Str,"return")==0) *WordId = RsvReturn;
@@ -214,6 +217,7 @@ BOOL CheckReservedWord(PCHAR Str, LPWORD WordId)
   else if (stricmp(Str,"testlink")==0) *WordId = RsvTestLink;
   else if (stricmp(Str,"then")==0) *WordId = RsvThen;
   else if (stricmp(Str,"unlink")==0) *WordId = RsvUnlink;
+  else if (stricmp(Str,"waitregex")==0) *WordId = RsvWaitRegex;  // add 'waitregex' (2005.10.5 yutaka)
   else if (stricmp(Str,"wait")==0) *WordId = RsvWait;
   else if (stricmp(Str,"waitevent")==0) *WordId = RsvWaitEvent;
   else if (stricmp(Str,"waitln")==0) *WordId = RsvWaitLn;
@@ -713,80 +717,82 @@ BOOL GetFactor(LPWORD ValType, int far *Val, LPWORD Err)
 
 BOOL GetTerm(LPWORD ValType, int far *Val, LPWORD Err)
 {
-  WORD P1, P2, Type1, Type2, Er;
-  int Val1, Val2;
-  WORD WId;
+	WORD P1, P2, Type1, Type2, Er;
+	int Val1, Val2;
+	WORD WId;
 
-  P1 = LinePtr;
-  if (! GetFactor(&Type1,&Val1,&Er)) return FALSE;
-  *ValType = Type1;
-  *Val = Val1;
-  *Err = Er;
-  if (Er!=0)
-  {
-    LinePtr = P1;
-    return TRUE;
-  }
-  if (Type1!=TypInteger) return TRUE;
-
-  do {
-    P2 = LinePtr;
-    if (! GetOperator(&WId)) return TRUE;
-
-    switch (WId) {
-      case RsvAnd:
-      case RsvMul:
-      case RsvDiv:
-      case RsvMod: break;
-      default:
-	LinePtr = P2;
-	return TRUE;
-    }
-
-    if (! GetFactor(&Type2,&Val2,&Er))
-    {
-      *Err = ErrSyntax;
-      LinePtr = P1;
-      return TRUE;
-    }
-
-    if (Er!=0)
-    {
-      *Err = Er;
-      LinePtr = P1;
-      return TRUE;
-    }
-
-    if (Type2!=TypInteger)
-    {
-      *Err = ErrTypeMismatch;
-      LinePtr = P1;
-      return TRUE;
-    }
-
-    switch (WId) {
-      case RsvAnd: Val1 = Val1 & Val2; break;
-      case RsvMul: Val1 = Val1 * Val2; break;
-      case RsvDiv:
-	if (Val2!=0)
-	  Val1 = Val1 / Val2;
-	else {
-	  *Err = ErrDivByZero;
-	  LinePtr = P1;
-	  return TRUE;
+	P1 = LinePtr;
+	if (! GetFactor(&Type1,&Val1,&Er)) return FALSE;
+	*ValType = Type1;
+	*Val = Val1;
+	*Err = Er;
+	if (Er!=0)
+	{
+		LinePtr = P1;
+		return TRUE;
 	}
-      case RsvMod:
-	if (Val2!=0)
-	  Val1 = Val1 % Val2;
-	else {
-	  *Err = ErrDivByZero;
-	  LinePtr = P1;
-	  return TRUE;
-	}
-    }
+	if (Type1!=TypInteger) return TRUE;
 
-    *Val = Val1;
-  } while (TRUE);
+	do {
+		P2 = LinePtr;
+		if (! GetOperator(&WId)) return TRUE;
+
+		switch (WId) {
+		case RsvAnd:
+		case RsvMul:
+		case RsvDiv:
+		case RsvMod: break;
+		default:
+			LinePtr = P2;
+			return TRUE;
+		}
+
+		if (! GetFactor(&Type2,&Val2,&Er))
+		{
+			*Err = ErrSyntax;
+			LinePtr = P1;
+			return TRUE;
+		}
+
+		if (Er!=0)
+		{
+			*Err = Er;
+			LinePtr = P1;
+			return TRUE;
+		}
+
+		if (Type2!=TypInteger)
+		{
+			*Err = ErrTypeMismatch;
+			LinePtr = P1;
+			return TRUE;
+		}
+
+		switch (WId) {
+		case RsvAnd: Val1 = Val1 & Val2; break;
+		case RsvMul: Val1 = Val1 * Val2; break;
+		case RsvDiv:
+			if (Val2!=0)
+				Val1 = Val1 / Val2;
+			else {
+				*Err = ErrDivByZero;
+				LinePtr = P1;
+				return TRUE;
+			}
+			break;  // 追加。除算結果がおかしくなるバグの修正。(2005.8.14 yutaka)
+
+		case RsvMod:
+			if (Val2!=0)
+				Val1 = Val1 % Val2;
+			else {
+				*Err = ErrDivByZero;
+				LinePtr = P1;
+				return TRUE;
+			}
+		}
+
+		*Val = Val1;
+	} while (TRUE);
 }
 
 BOOL GetSimpleExpression(LPWORD ValType, int far *Val, LPWORD Err)
