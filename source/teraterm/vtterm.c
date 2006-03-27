@@ -284,39 +284,58 @@ void BackSpace()
 	((ts.TermFlag & TF_BACKWRAP)!=0))
     {
       MoveCursor(NumOfColumns-1,CursorY-1);
-      if (cv.HLogBuf!=0) Log1Byte(BS);
+//      if (cv.HLogBuf!=0) Log1Byte(BS);
+// (2005.2.20 yutaka)
+	  if (cv.HLogBuf!=0 && !ts.LogTypePlainText) Log1Byte(BS);
     }
   }
   else if (CursorX > 0)
   {
     MoveCursor(CursorX-1,CursorY);
-    if (cv.HLogBuf!=0) Log1Byte(BS);
+//    if (cv.HLogBuf!=0) Log1Byte(BS);
+// (2005.2.20 yutaka)
+	  if (cv.HLogBuf!=0 && !ts.LogTypePlainText) Log1Byte(BS);
   }
 }
 
+static int crlf_logwrite_disabled = 0;
+
 void CarriageReturn()
 {
- if (cv.HLogBuf!=0) Log1Byte(CR);
- if (CursorX>0)
-   MoveCursor(0,CursorY);
+	// 行が連結している場合は、ログファイルに改行コードを含めない。(2004.12.7 yutaka)
+	if (Wrap && ts.EnableContinuedLineCopy) {
+		crlf_logwrite_disabled = 1;
+
+	} else {
+		if (cv.HLogBuf!=0) Log1Byte(CR);
+	}
+
+	if (CursorX>0)
+		MoveCursor(0,CursorY);
 }
 
 void LineFeed(BYTE b)
 {
- /* for auto print mode */
- if ((AutoPrintMode) &&
-     (b>=LF) && (b<=FF))
-   BuffDumpCurrentLine(b);
+	/* for auto print mode */
+	if ((AutoPrintMode) &&
+		(b>=LF) && (b<=FF))
+		BuffDumpCurrentLine(b);
 
- if (cv.HLogBuf!=0) Log1Byte(LF);
+	// 行が連結している場合は、ログファイルに改行コードを含めない。(2004.12.7 yutaka)
+	if (crlf_logwrite_disabled == 1) {
+		crlf_logwrite_disabled = 0;
 
- if (CursorY < CursorBottom)
-   MoveCursor(CursorX,CursorY+1);
- else if (CursorY == CursorBottom) BuffScrollNLines(1);
- else if (CursorY < NumOfLines-StatusLine-1)
-   MoveCursor(CursorX,CursorY+1);
+	} else {
+		if (cv.HLogBuf!=0) Log1Byte(LF);
+	}
 
- if (LFMode) CarriageReturn();
+	if (CursorY < CursorBottom)
+		MoveCursor(CursorX,CursorY+1);
+	else if (CursorY == CursorBottom) BuffScrollNLines(1);
+	else if (CursorY < NumOfLines-StatusLine-1)
+		MoveCursor(CursorX,CursorY+1);
+
+	if (LFMode) CarriageReturn();
 }
 
 void Tab()
@@ -327,11 +346,6 @@ void Tab()
 
 void PutChar(BYTE b)
 {
-#if 0
-	void PutKanji(BYTE b);
-	Kanji = 0;
-	PutKanji(b);
-#else
   BOOL SpecialNew;
   BYTE CharAttrTmp;
 
@@ -352,7 +366,19 @@ void PutChar(BYTE b)
     CharAttrTmp = 0;
 #endif /* NO_COPYLINE_FIX */
   }
-  if (cv.HLogBuf!=0) Log1Byte(b);
+
+//  if (cv.HLogBuf!=0) Log1Byte(b);
+// (2005.2.20 yutaka)
+  if (ts.LogTypePlainText) {
+	  if (__isascii(b) && !isprint(b)) {
+		  // ASCII文字で、非表示な文字はログ採取しない。
+	  } else {
+		if (cv.HLogBuf!=0) Log1Byte(b);
+	  }
+  } else {
+	  if (cv.HLogBuf!=0) Log1Byte(b);
+  }
+
   Wrap = FALSE;
 
   SpecialNew = FALSE;
@@ -401,7 +427,6 @@ void PutChar(BYTE b)
     UpdateStr();
     Wrap = AutoWrapMode;
   }
-#endif
 }
 
 
@@ -1137,26 +1162,38 @@ void EscapeSequence(BYTE b)
     CSCursorDown();
   }
 
-  void CSScreenErase()
-  {
-    if (Param[1] == -1) Param[1] = 0;
-    BuffUpdateScroll();
-    switch (Param[1]) {
-      case 0:
-//	Erase characters from cursor to the end of screen
-	BuffEraseCurToEnd();
-	break;
-      case 1:
-//	Erase characters from home to cursor
-	BuffEraseHomeToCur();
-	break;
-      case 2:
-//	Erase screen (scroll out)
-	BuffClearScreen();
-	UpdateWindow(HVTWin);
-	break;
-    }
-  }
+void CSScreenErase()
+{
+	if (Param[1] == -1) Param[1] = 0;
+	BuffUpdateScroll();
+	switch (Param[1]) {
+	case 0:
+		// <ESC>[H(Cursor in left upper corner)によりカーソルが左上隅を指している場合、
+		// <ESC>[Jは<ESC>[2Jと同じことなので、処理を分け、現行バッファをスクロールアウト
+		// させるようにする。(2005.5.29 yutaka)
+		if (CursorX == 0 && CursorY == 0) {
+			//	Erase screen (scroll out)
+			BuffClearScreen();
+			UpdateWindow(HVTWin);
+
+		} else {
+			//	Erase characters from cursor to the end of screen
+			BuffEraseCurToEnd();
+		}
+		break;
+
+	case 1:
+		//	Erase characters from home to cursor
+		BuffEraseHomeToCur();
+		break;
+
+	case 2:
+		//	Erase screen (scroll out)
+		BuffClearScreen();
+		UpdateWindow(HVTWin);
+		break;
+	}
+}
 
   void CSInsertLine()
   {
@@ -1377,66 +1414,75 @@ void EscapeSequence(BYTE b)
     }
   }
 
-  void CSSetAttr()
-  {
-    int i, P;
+void CSSetAttr()
+{
+	int i, P;
 
-    UpdateStr();
-    for (i=1 ; i<=NParam ; i++)
-    {
-      P = Param[i];
-      if (P<0) P = 0;
-      switch (P) {
-	/* Clear */
-	case 0:
-	  CharAttr = AttrDefault;
-	  CharAttr2 = AttrDefault2;
-	  break;
-	/* Bold */
-	case 1:
-	  CharAttr = CharAttr | AttrBold;
-	  break;
-	/* Under line */
-	case 4:
-	  CharAttr = CharAttr | AttrUnder;
-	  break;
-	/* Blink */
-	case 5:
-	  CharAttr = CharAttr | AttrBlink;
-	  break;
-	/* Reverse */
-	case 7:
-	  CharAttr = CharAttr | AttrReverse;
-	  break;
-	/* Bold off */
-	case 22:
-	  CharAttr = CharAttr & ~ AttrBold;
-	  break;
-	/* Under line off */
-	case 24:
-	  CharAttr = CharAttr & ~ AttrUnder;
-	  break;
-	/* Blink off */
-	case 25:
-	  CharAttr = CharAttr & ~ AttrBlink;
-	  break;
-	/* Reverse off */
-	case 27:
-	  CharAttr = CharAttr & ~ AttrReverse;
-	  break;
-	default:
-	  /* Text color */
-	  if ((P>=30) && (P<=37))
-	    CharAttr2 = CharAttr2 & (Attr2Back | Attr2BackMask)
-	      | (P-30) | Attr2Fore;
-	  else if ((P>=40) && (P<=47)) /* Back color */
-	    CharAttr2 = CharAttr2 & (Attr2Fore | Attr2ForeMask)
-	      | ((P-40) << SftAttrBack) | Attr2Back;
-	  else if (P==100) /* Reset color attributes */
-	    CharAttr2 = AttrDefault2;
-      }
-    }
-  }
+	UpdateStr();
+	for (i=1 ; i<=NParam ; i++)
+	{
+		P = Param[i];
+		if (P<0) P = 0;
+		switch (P) {
+			/* Clear */
+		case 0:
+			CharAttr = AttrDefault;
+			CharAttr2 = AttrDefault2;
+			break;
+			/* Bold */
+		case 1:
+			CharAttr = CharAttr | AttrBold;
+			break;
+			/* Under line */
+		case 4:
+			CharAttr = CharAttr | AttrUnder;
+			break;
+			/* Blink */
+		case 5:
+			CharAttr = CharAttr | AttrBlink;
+			break;
+			/* Reverse */
+		case 7:
+			CharAttr = CharAttr | AttrReverse;
+			break;
+			/* Bold off */
+		case 22:
+			CharAttr = CharAttr & ~ AttrBold;
+			break;
+			/* Under line off */
+		case 24:
+			CharAttr = CharAttr & ~ AttrUnder;
+			break;
+			/* Blink off */
+		case 25:
+			CharAttr = CharAttr & ~ AttrBlink;
+			break;
+			/* Reverse off */
+		case 27:
+			CharAttr = CharAttr & ~ AttrReverse;
+			break;
+		default:
+			// ESC[39mが前景色のリセットでESC[49mが背景色であるtermcap xtermの
+			// エスケープシーケンスを追加（岩本氏パッチ）。 
+			// これによりscreen上でw3mを使用した場合、色が戻らない現象が改善される。
+			// (2005/4/7 yutaka)
+
+			/* Text color */
+			if ((P>=30) && (P<=37))
+				CharAttr2 = CharAttr2 & (Attr2Back | Attr2BackMask)
+				| (P-30) | Attr2Fore;
+			else if ((P>=40) && (P<=47)) /* Back color */
+				CharAttr2 = CharAttr2 & (Attr2Fore | Attr2ForeMask)
+				| ((P-40) << SftAttrBack) | Attr2Back;
+			else if (P==39) /* Reset foreground color */
+				CharAttr2 = CharAttr2 & (Attr2Back | Attr2BackMask);
+			else if (P==49) /* Reset background color */
+				CharAttr2 = CharAttr2 & (Attr2Fore | Attr2ForeMask);
+			else if (P==100) /* Reset color attributes */
+				CharAttr2 = AttrDefault2;
+		}
+	}
+}
 
   void CSSetScrollRegion()
   {
@@ -2112,6 +2158,11 @@ BOOL ParseFirstJP(BYTE b)
     }
     else if ((ts.TermFlag & TF_CTRLINKANJI)==0)
       KanjiIn = FALSE;
+    else if ((b==CR) && Wrap) { // iwamoto patch (http://www.freeml.com/message/teraterm@freeml.com/0000142)
+      CarriageReturn();
+      LineFeed(LF);
+      Wrap = FALSE;
+    }
   }
 	
   if (SSflag)
@@ -2241,12 +2292,17 @@ extern unsigned short ConvertUnicode(unsigned short code, codemap_t *table, int 
 //
 #include "hfs_plus.map"
 
-unsigned short GetIllegalUnicode(int start_index, unsigned short code, hfsplus_codemap_t *table, int tmax)
+unsigned short GetIllegalUnicode(int start_index, unsigned short first_code, unsigned short code, 
+								 hfsplus_codemap_t *table, int tmax)
 {
 	unsigned short result = 0;
 	int i;
 
 	for (i = start_index ; i < tmax ; i++) {
+		if (table[i].first_code != first_code) { // 1文字目が異なるなら、以降はもう調べなくてよい。
+			break;
+		}
+
 		if (table[i].second_code == code) {
 			result = table[i].illegal_code;
 			break;
@@ -2428,11 +2484,25 @@ BOOL ParseFirstUTF8(BYTE b, int hfsplus_mode)
 				}
 			} else {
 				maybe_hfsplus = 0;
-				cset = GetIllegalUnicode(first_code_index, code, mapHFSPlusUnicode, sizeof(mapHFSPlusUnicode)/sizeof(mapHFSPlusUnicode[0]));
+				cset = GetIllegalUnicode(first_code_index, first_code, code, mapHFSPlusUnicode, sizeof(mapHFSPlusUnicode)/sizeof(mapHFSPlusUnicode[0]));
 				if (cset != 0) { // success
 					code = cset;
 
 				} else { // error
+					// 2つめの文字が半濁点の1文字目に相当する場合は、再度検索を続ける。(2005.10.15 yutaka)
+					if ((first_code_index = GetIndexOfHFSPlusFirstCode(
+							code, mapHFSPlusUnicode, sizeof(mapHFSPlusUnicode)/sizeof(mapHFSPlusUnicode[0])
+							)) != -1) {
+
+						// 1つめの文字はそのまま出力する
+						UnicodeToCP932(first_code, 3);
+
+						maybe_hfsplus = 1;
+						first_code = code;
+						count = 0;
+						return (TRUE);
+					}
+
 					UnicodeToCP932(first_code, 3);
 					UnicodeToCP932(code, 3);
 					count = 0;
@@ -2560,3 +2630,39 @@ int VTParse()
   if (ChangeEmu > 0) ParseMode = ModeFirst;
   return ChangeEmu;
 }
+
+/*
+ * $Log: not supported by cvs2svn $
+ * Revision 1.7  2005/05/29 05:48:19  yutakakn
+ * <ESC>[H(Cursor in left upper corner)によりカーソルが左上隅を指している場合、
+ * <ESC>[Jは<ESC>[2Jと同じことなので、処理を分け、現行バッファをスクロールアウト
+ * させるようにする。
+ *
+ * Revision 1.6  2005/05/25 14:46:33  yutakakn
+ * <ESC>[Jによる画面クリア時にカレントバッファをスクロールアウトさせるようにした。
+ *
+ * Revision 1.5  2005/04/07 12:51:34  yutakakn
+ * エスケープシーケンス（ESC[39m, ESC[49m）をサポートした。これによりscreen上でw3mを使用した場合、色が戻らない現象が改善される。岩本氏に感謝します。
+ *
+ * Revision 1.4  2005/02/28 13:54:47  yutakakn
+ * 全角文字が行末を跨ると、上方へスクロールしてしまう問題への対処（岩本氏パッチ）。
+ * http://www.freeml.com/message/teraterm@freeml.com/0000142
+ *
+ * Revision 1.3  2005/02/20 14:51:29  yutakakn
+ * ログファイルの種別に"plain text"を追加。このオプションが有効の場合は、ログファイルに
+ * ASCII非表示文字の採取をしない。
+ *
+ * 現在、無視するキャラクタは以下のとおり。
+ * 　・BS
+ * 　・ASCII(0x00-0x1f)のうち非表示なもの
+ *
+ * ただし、例外として以下のものはログ採取対象。
+ * 　・HT
+ * 　・CR
+ * 　・LF
+ *
+ * Revision 1.2  2004/12/07 14:31:13  yutakakn
+ * 行が連結している場合は、ログファイルに改行コードを含めないようにした。
+ * ただし、EnableContinuedLineCopy 機能が有効の場合に限る。
+ * 
+ */
