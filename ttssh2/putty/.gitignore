@@ -1,0 +1,14 @@
+/[Rr]elease
+/[Dd]ebug
+/*.vcproj.*.user
+/INT64.H
+/MISC.C
+/MISC.H
+/NETWORK.H
+/PUTTY.H
+/PUTTYMEM.H
+/PUTTYPS.H
+/SSH.H
+/SSHBN.C
+/TREE234.H
+/[Ww]indows
