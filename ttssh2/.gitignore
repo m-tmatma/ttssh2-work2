@@ -1,7 +1,5 @@
-/[Rr]elease
 /[Dd]ebug
+/[Rr]elease
 /*.ncb
 /*.suo
-/*.aps
 /*.vcproj.*.user
-/openssl
