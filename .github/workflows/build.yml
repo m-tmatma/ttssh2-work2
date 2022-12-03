@@ -28,5 +28,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: build script
-        run: call ci_scripts\build_appveyor.bat
+        run: ci_scripts\build_appveyor.bat
+        shell: cmd
 
