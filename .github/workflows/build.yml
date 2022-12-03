@@ -33,7 +33,7 @@ jobs:
         with:
           msystem: MSYS
           install: pacman
-      - run: pacman --noconfirm -S make   
+      - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make
       # see https://github.com/ilammy/msvc-dev-cmd
       # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
       - uses: ilammy/msvc-dev-cmd@v1
