@@ -28,10 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # see https://github.com/microsoft/setup-msbuild
-      - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v1.1
-
+      # see https://github.com/ilammy/msvc-dev-cmd
+      # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_x86
       - name: build script
         run: ci_scripts\build_local_appveyor_vs2019.bat
         shell: cmd
