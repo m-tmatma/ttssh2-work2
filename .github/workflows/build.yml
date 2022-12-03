@@ -37,4 +37,8 @@ jobs:
       - name: build script
         run: ci_scripts\build_appveyor.bat
         shell: cmd
+      - name: find exe
+        run: dir /b /s /a-d *.exe
+        shell: cmd
+
 
