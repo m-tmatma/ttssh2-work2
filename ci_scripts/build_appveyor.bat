@@ -13,7 +13,9 @@ if exist c:\cygwin64\setup-x86_64.exe (
   rem c:\cygwin64\setup-x86_64.exe --quiet-mode --packages cygwin32-gcc-g++ --packages cygwin32-gcc-core
 )
 echo ------------------- APPVEYOR 5 -----------------------------------
-pacman.exe  -S --noconfirm --needed cmake
+if exist c:\msys64\usr\bin\pacman.exe (
+  c:\msys64\usr\bin\pacman.exe  -S --noconfirm --needed cmake
+)
 echo ------------------- APPVEYOR 6 -----------------------------------
 if "%GENERATOR%" == "Visual Studio 8 2005" (
   cd buildtools
