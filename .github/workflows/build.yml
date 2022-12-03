@@ -33,7 +33,8 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64_x86
+          vsversion: 2022
       - name: build script
-        run: ci_scripts\build_local_appveyor_vs2019.bat
+        run: ci_scripts\build_appveyor.bat
         shell: cmd
 
