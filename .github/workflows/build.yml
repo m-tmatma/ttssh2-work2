@@ -20,7 +20,7 @@ env:
   APPVEYOR_SAVE_CACHE_ON_ERROR: true
 
 jobs:
-  example_matrix:
+  windows:
     strategy:
       matrix:
         os: [windows-latest]
