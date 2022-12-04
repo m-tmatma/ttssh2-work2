@@ -45,7 +45,11 @@ jobs:
       - uses: cygwin/cygwin-install-action@master
         with:
           install-dir: c:\cygwin64
- 
+
+      - name: build cygterm
+        run: cygwin\cygterm\build.bat
+        shell: cmd
+
       # https://ttssh2.osdn.jp/manual/4/ja/reference/develop.html#build-cygterm
       #- name: build CygTerm
       #  run: |
@@ -53,7 +57,7 @@ jobs:
       #    cd cygwin/cygterm
       #    make
       #  shell: bash
-        
+
       - name: build script
         run: ci_scripts\build_appveyor.bat
         shell: cmd
