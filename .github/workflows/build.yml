@@ -40,6 +40,10 @@ jobs:
         with:
           arch: amd64_x86
           vsversion: 2022
+
+      # https://github.com/cygwin/cygwin-install-action
+      - uses: cygwin/cygwin-install-action@master
+ 
       - name: build script
         run: ci_scripts\build_appveyor.bat
         shell: cmd
