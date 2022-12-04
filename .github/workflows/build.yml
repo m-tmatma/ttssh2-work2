@@ -52,9 +52,9 @@ jobs:
         with:
           install-dir: c:\cygwin64
 
-      - name: build cygterm
-        run: cygwin\cygterm\build.bat
-        shell: cmd
+      # - name: build cygterm
+      #   run: cygwin\cygterm\build.bat
+      #   shell: cmd
 
       # https://ttssh2.osdn.jp/manual/4/ja/reference/develop.html#build-cygterm
       #- name: build CygTerm
