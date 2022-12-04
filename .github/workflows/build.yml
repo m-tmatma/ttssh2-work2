@@ -34,6 +34,13 @@ jobs:
           msystem: MSYS
           install: pacman
       - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make mingw-w64-ucrt-x86_64-gcc
+
+      - name: find msys64
+        run: |
+          cd c:/msys64 
+          dir /b /s /a-d *.exe
+        shell: cmd
+          
       # see https://github.com/ilammy/msvc-dev-cmd
       # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
       - uses: ilammy/msvc-dev-cmd@v1
