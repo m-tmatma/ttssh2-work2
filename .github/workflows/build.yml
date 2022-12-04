@@ -34,7 +34,7 @@ jobs:
         with:
           msystem: MSYS
           install: pacman
-      - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make mingw-w64-ucrt-x86_64-gcc
+      - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make gcc
 
       - name: find msys64
         run: dir c:\msys64\usr\bin\*.exe
