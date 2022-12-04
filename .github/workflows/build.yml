@@ -43,6 +43,8 @@ jobs:
 
       # https://github.com/cygwin/cygwin-install-action
       - uses: cygwin/cygwin-install-action@master
+        with:
+          install-dir: c:\cygwin64
  
      # https://ttssh2.osdn.jp/manual/4/ja/reference/develop.html#build-cygterm
       - name: build CygTerm
