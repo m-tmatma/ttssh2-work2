@@ -27,7 +27,18 @@ jobs:
         os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
+      - name: "Setup git"
+        shell: cmd
+        run: git config --global core.autocrlf input
+
       - uses: actions/checkout@v3
+
+      - name: "Setup Cygwin"
+        uses: cygwin/cygwin-install-action@v2
+        with:
+          platform: x86_64
+          packages: automake make cmake gcc-g++ doxygen graphviz libssl-devel libuuid-devel
+          install-dir: c:\cygwin64
 
       # # https://github.com/msys2/setup-msys2
       # - uses: msys2/setup-msys2@v2
@@ -46,11 +57,6 @@ jobs:
         with:
           arch: amd64_x86
           vsversion: 2022
-
-      # https://github.com/cygwin/cygwin-install-action
-      - uses: cygwin/cygwin-install-action@master
-        with:
-          install-dir: c:\cygwin64
 
       # - name: build cygterm
       #   run: cygwin\cygterm\build.bat
