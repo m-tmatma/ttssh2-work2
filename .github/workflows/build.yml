@@ -36,9 +36,7 @@ jobs:
       - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make mingw-w64-ucrt-x86_64-gcc
 
       - name: find msys64
-        run: |
-          cd c:\msys64
-          dir /b /s /a-d *.exe
+        run: dir c:\msys64\usr\bin\*.exe
         shell: cmd
           
       # see https://github.com/ilammy/msvc-dev-cmd
