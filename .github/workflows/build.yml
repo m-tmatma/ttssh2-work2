@@ -37,7 +37,7 @@ jobs:
 
       - name: find msys64
         run: |
-          cd c:/msys64 
+          cd c:\msys64
           dir /b /s /a-d *.exe
         shell: cmd
           
