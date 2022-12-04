@@ -42,6 +42,7 @@ jobs:
 
       - name: curl setup-x86_64.exe
         run: curl -OL https://www.cygwin.com/setup-x86_64.exe
+        shell: cmd
         
       - name: install crygwin
         run: setup-x86_64.exe --packages gcc  --packages make --no-desktop --quiet-mode
