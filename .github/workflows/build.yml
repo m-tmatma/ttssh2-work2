@@ -46,13 +46,13 @@ jobs:
         with:
           install-dir: c:\cygwin64
  
-     # https://ttssh2.osdn.jp/manual/4/ja/reference/develop.html#build-cygterm
-      - name: build CygTerm
-        run: |
-          cd
-          cd cygwin/cygterm
-          make
-        shell: bash
+      # https://ttssh2.osdn.jp/manual/4/ja/reference/develop.html#build-cygterm
+      #- name: build CygTerm
+      #  run: |
+      #    cd
+      #    cd cygwin/cygterm
+      #    make
+      #  shell: bash
         
       - name: build script
         run: ci_scripts\build_appveyor.bat
