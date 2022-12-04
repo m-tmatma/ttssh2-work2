@@ -47,7 +47,8 @@ jobs:
      # https://ttssh2.osdn.jp/manual/4/ja/reference/develop.html#build-cygterm
       - name: build CygTerm
         run: |
-          cd $GITHUB_WORKSPACE/cygterm
+          cd $GITHUB_WORKSPACE
+          cd cygwin/cygterm
           make
         shell: bash
         
