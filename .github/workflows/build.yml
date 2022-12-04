@@ -27,18 +27,18 @@ jobs:
         os: [windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - name: "Setup git"
-        shell: cmd
-        run: git config --global core.autocrlf input
+      # - name: "Setup git"
+      #   shell: cmd
+      #   run: git config --global core.autocrlf input
 
       - uses: actions/checkout@v3
 
-      # # https://github.com/msys2/setup-msys2
-      # - uses: msys2/setup-msys2@v2
-      #   with:
-      #     msystem: MSYS
-      #     install: pacman
-      # - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make gcc
+      # https://github.com/msys2/setup-msys2
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MSYS
+          install: pacman
+      - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make gcc
 
       # - name: find msys64
       #   run: dir c:\msys64\usr\bin\*.exe
@@ -51,12 +51,12 @@ jobs:
           arch: amd64_x86
           vsversion: 2022
 
-      - name: "Setup Cygwin"
-        uses: cygwin/cygwin-install-action@v2
-        with:
-          platform: x86_64
-          packages: automake make cmake gcc-g++ doxygen graphviz libssl-devel libuuid-devel
-          install-dir: c:\cygwin64
+      # - name: "Setup Cygwin"
+      #   uses: cygwin/cygwin-install-action@v2
+      #   with:
+      #     platform: x86_64
+      #     packages: automake make cmake gcc-g++ doxygen graphviz libssl-devel libuuid-devel
+      #     install-dir: c:\cygwin64
 
       # - name: build cygterm
       #   run: cygwin\cygterm\build.bat
