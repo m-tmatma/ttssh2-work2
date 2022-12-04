@@ -47,7 +47,7 @@ jobs:
      # https://ttssh2.osdn.jp/manual/4/ja/reference/develop.html#build-cygterm
       - name: build CygTerm
         run: |
-          pwd
+          cd
           cd cygwin/cygterm
           make
         shell: bash
