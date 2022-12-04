@@ -85,6 +85,9 @@ echo "%CMAKE_COMMAND%" --build . --target install %CMAKE_OPTION_BUILD%
 echo ------------------- APPVEYOR 21 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target zip
 "%CMAKE_COMMAND%" --build . --target zip
+
+echo ------------------- APPVEYOR 21 after------------------------------
+dir /b /s /a-d *.exe
 echo ------------------- APPVEYOR 22 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target inno_setup
 "%CMAKE_COMMAND%" --build . --target inno_setup
