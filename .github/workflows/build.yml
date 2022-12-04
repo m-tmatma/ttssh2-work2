@@ -27,6 +27,13 @@ jobs:
         os: ["windows-2019"]
     runs-on: ${{ matrix.os }}
     steps:
+      # see https://github.com/ilammy/msvc-dev-cmd
+      # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_x86
+          vsversion: 2022
+
       # - name: "Setup git"
       #   shell: cmd
       #   run: git config --global core.autocrlf input
@@ -43,13 +50,6 @@ jobs:
       # - name: find msys64
       #   run: dir c:\msys64\usr\bin\*.exe
       #   shell: cmd
-          
-      # see https://github.com/ilammy/msvc-dev-cmd
-      # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64_x86
-          vsversion: 2022
 
       # - name: "Setup Cygwin"
       #   uses: cygwin/cygwin-install-action@v2
