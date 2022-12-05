@@ -40,30 +40,35 @@ jobs:
 
       - uses: actions/checkout@v3
 
-      - name: curl setup-x86_64.exe
-        run: curl -OL https://www.cygwin.com/setup-x86_64.exe
-        shell: cmd
-        
       - name: install crygwin
-        run: setup-x86_64.exe --packages gcc  --packages make --no-desktop --quiet-mode
+        run: |
+          cd ci_scripts
+          "cmake" -P install_cygwin.cmake
 
-      # https://github.com/msys2/setup-msys2
-      - uses: msys2/setup-msys2@v2
-        with:
-          msystem: MSYS
-          install: pacman
-      - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make gcc
+      # - name: curl setup-x86_64.exe
+      #   run: curl -OL https://www.cygwin.com/setup-x86_64.exe
+      #   shell: cmd
+        
+      # - name: install crygwin
+      #   run: setup-x86_64.exe --packages gcc  --packages make --no-desktop --quiet-mode
+
+      # # https://github.com/msys2/setup-msys2
+      # - uses: msys2/setup-msys2@v2
+      #   with:
+      #     msystem: MSYS
+      #     install: pacman
+      # - run: c:\msys64\usr\bin\pacman.exe --noconfirm -S make gcc
 
       # - name: find msys64
       #   run: dir c:\msys64\usr\bin\*.exe
       #   shell: cmd
 
-      - name: "Setup Cygwin"
-        uses: cygwin/cygwin-install-action@v2
-        with:
-          platform: x86_64
-          packages: automake make cmake gcc-g++ doxygen graphviz libssl-devel libuuid-devel
-          install-dir: c:\cygwin64
+      # - name: "Setup Cygwin"
+      #   uses: cygwin/cygwin-install-action@v2
+      #   with:
+      #     platform: x86_64
+      #     packages: automake make cmake gcc-g++ doxygen graphviz libssl-devel libuuid-devel
+      #     install-dir: c:\cygwin64
 
       # - name: build cygterm
       #   run: cygwin\cygterm\build.bat
