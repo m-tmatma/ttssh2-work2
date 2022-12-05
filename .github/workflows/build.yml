@@ -45,6 +45,7 @@ jobs:
           cd ci_scripts
           "cmake" -P install_cygwin.cmake
         shell: cmd
+        timeout-minutes: 20
 
       # - name: curl setup-x86_64.exe
       #   run: curl -OL https://www.cygwin.com/setup-x86_64.exe
