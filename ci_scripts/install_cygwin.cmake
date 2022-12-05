@@ -1,6 +1,6 @@
 ﻿
 set(SETUP_URL "https://cygwin.com/setup-x86_64.exe")
-set(SETUP_HASH_SHA256 "b9219acd1241ffa4d38e19587f1ccc2854f951e451f3858efc9d2e1fe19d375c")
+set(SETUP_HASH_SHA256 "edd0a64dc65087ffe453ca94b267169b39458a983b29ac31320fcaa983d0f97e")
 
 file(DOWNLOAD
   ${SETUP_URL}
