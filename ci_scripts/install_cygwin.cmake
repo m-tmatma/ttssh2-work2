@@ -10,5 +10,5 @@ file(DOWNLOAD
   )
 
 execute_process(
-  COMMAND c:/cygwin64/setup-x86_64.exe --quiet-mode --upgrade-also
+  COMMAND c:/cygwin64/setup-x86_64.exe --quiet-mode --upgrade-also --no-admin
   )
