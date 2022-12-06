@@ -40,11 +40,21 @@ jobs:
 
       - uses: actions/checkout@v3
 
-      - name: Set up Cygwin
+      - name: Install Cygwin
+        # You may pin to the exact commit or the version.
+        # uses: egor-tensin/setup-cygwin@4f96f9fecb8c952fa32ff791b0a77d93d5191bb4
         uses: egor-tensin/setup-cygwin@v3
         with:
-          platform: x64
-          packages: cmake gcc-g++
+          # Target platform
+          platform: x64 # optional, default is x64
+          # Installation directory
+          install-dir: c:/cygwin64 # optional, default is C:\tools\cygwin
+          # Packages to install, separated by a space
+          packages: dash gcc-core gcc-fortran automake libtool python38-cython python38-devel python38-tox python38-virtualenv python38-distlib python38-numpy git
+          # Value to set as the CYGWIN environment variable
+          env: # optional
+          # Convert symlinks in /usr/bin to hardlinks
+          hardlinks: 0 # optional, default is 0
 
       # - name: install crygwin
       #   run: |
