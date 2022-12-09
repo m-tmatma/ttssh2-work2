@@ -30,6 +30,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include "cygterm_cfg.h"
 
