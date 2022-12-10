@@ -104,10 +104,80 @@ jobs:
       #    make
       #  shell: bash
 
-      - name: build script
-        run: ci_scripts\build_appveyor.bat
+      - name: build_appveyor0
+        run: ci_scripts\build_appveyor0.bat
         shell: cmd
+
+      - name: build_appveyor1
+        run: ci_scripts\build_appveyor1.bat
+        shell: cmd
+
+      - name: build_appveyor2
+        run: ci_scripts\build_appveyor2.bat
+        shell: cmd
+
+      - name: build_appveyor3
+        run: ci_scripts\build_appveyor3.bat
+        shell: cmd
+
+      - name: build_appveyor4
+        run: ci_scripts\build_appveyor4.bat
+        shell: cmd
+
+      - name: build_appveyor5
+        run: ci_scripts\build_appveyor5.bat
+        shell: cmd
+
+      - name: build_appveyor6
+        run: ci_scripts\build_appveyor6.bat
+        shell: cmd
+
+      - name: build_appveyor7
+        run: ci_scripts\build_appveyor7.bat
+        shell: cmd
+
+      - name: build_appveyor8
+        run: ci_scripts\build_appveyor8.bat
+        shell: cmd
+
+      - name: build_appveyor9
+        run: ci_scripts\build_appveyor9.bat
+        shell: cmd
+
+      - name: build_appveyor11
+        run: ci_scripts\build_appveyor11.bat
+        shell: cmd
+
+      - name: build_appveyor13
+        run: ci_scripts\build_appveyor13.bat
+        shell: cmd
+
+      - name: build_appveyor15
+        run: ci_scripts\build_appveyor15.bat
+        shell: cmd
+
+      - name: build_appveyor20
+        run: ci_scripts\build_appveyor20.bat
+        shell: cmd
+
+      - name: build_appveyor21
+        run: ci_scripts\build_appveyor21.bat
+        shell: cmd
+
+      - name: build_appveyor21-after
+        run: ci_scripts\build_appveyor21-after.bat
+        shell: cmd
+
+      - name: build_appveyor22
+        run: ci_scripts\build_appveyor22.bat
+        shell: cmd
+
+      #- name: build script
+      #  run: ci_scripts\build_appveyor.bat
+      #  shell: cmd
+
       - name: find exe
+        if: always()
         run: dir /b /s /a-d *.exe
         shell: cmd
 
