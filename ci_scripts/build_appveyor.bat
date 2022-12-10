@@ -9,38 +9,38 @@ echo ------------------- APPVEYOR 3 -----------------------------------
 call buildtools\svnrev\sourcetree_info.bat
 echo ------------------- APPVEYOR 4 -----------------------------------
 if exist c:\cygwin64\setup-x86_64.exe (
-  c:\cygwin64\setup-x86_64.exe --quiet-mode --packages cmake --packages cygwin32-gcc-g++ --packages cygwin32-gcc-core
+  c:\cygwin64\setup-x86_64.exe --quiet-mode --packages cmake --packages cygwin32-gcc-g++ --packages cygwin32-gcc-core || exit /b !ERRORLEVEL!
 )
 echo ------------------- APPVEYOR 5 -----------------------------------
 if exist c:\msys64\usr\bin\pacman.exe (
-  c:\msys64\usr\bin\pacman.exe  -S --noconfirm --needed cmake
+  c:\msys64\usr\bin\pacman.exe  -S --noconfirm --needed cmake                     || exit /b !ERRORLEVEL!
 )
 echo ------------------- APPVEYOR 6 -----------------------------------
 if "%GENERATOR%" == "Visual Studio 8 2005" (
   cd buildtools
-  call getcmake.bat nopause
+  call getcmake.bat nopause || exit /b !ERRORLEVEL!
   cd ..
 )
 echo ------------------- APPVEYOR 7 -----------------------------------
 if "%COMPILER%" == "mingw"  (
   set PATH=C:\msys64\mingw32\bin;C:\msys64\usr\bin
-  pacman -S --noconfirm --needed mingw-w64-i686-cmake mingw-w64-i686-gcc make
+  pacman -S --noconfirm --needed mingw-w64-i686-cmake mingw-w64-i686-gcc make     || exit /b !ERRORLEVEL!
   if "%MINGW_CC%" == "clang" (
-    pacman -S --noconfirm --needed mingw-w64-i686-clang
+    pacman -S --noconfirm --needed mingw-w64-i686-clang                           || exit /b !ERRORLEVEL!
   )
   set CC=%MINGW_CC%
   set CXX=%MINGW_CXX%
   set CMAKE_OPTION_BUILD=-- -s -j
-  set CMAKE_OPTION_GENERATE=%CMAKE_OPTION_GENERATE% -DCMAKE_BUILD_TYPE=Release
+  set CMAKE_OPTION_GENERATE=%CMAKE_OPTION_GENERATE% -DCMAKE_BUILD_TYPE=Release    || exit /b !ERRORLEVEL!
 )
 echo ------------------- APPVEYOR 8 -----------------------------------
 if "%COMPILER%" == "mingw_x64"  (
   set PATH=C:\msys64\mingw64\bin;C:\msys64\usr\bin
-  pacman -S --noconfirm --needed mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc make
-  pacman -S --noconfirm --needed mingw-w64-i686-cmake mingw-w64-i686-gcc make
+  pacman -S --noconfirm --needed mingw-w64-x86_64-cmake mingw-w64-x86_64-gcc make || exit /b !ERRORLEVEL!
+  pacman -S --noconfirm --needed mingw-w64-i686-cmake mingw-w64-i686-gcc make     || exit /b !ERRORLEVEL!
   if "%MINGW_CC%" == "clang" (
-    pacman -S --noconfirm --needed mingw-w64-x86_64-clang
-    pacman -S --noconfirm --needed mingw-w64-i686-clang
+    pacman -S --noconfirm --needed mingw-w64-x86_64-clang || exit /b !ERRORLEVEL!
+    pacman -S --noconfirm --needed mingw-w64-i686-clang || exit /b !ERRORLEVEL!
   )
   set CC=%MINGW_CC%
   set CXX=%MINGW_CXX%
@@ -51,7 +51,7 @@ echo ------------------- APPVEYOR 9 -----------------------------------
 cd libs
 echo ------------------- APPVEYOR 10 -----------------------------------
 if not exist openssl11_%COMPILER% (
-  "%CMAKE_COMMAND%" -DCMAKE_GENERATOR="%GENERATOR%" %CMAKE_OPTION_LIBS% -P buildall.cmake
+  "%CMAKE_COMMAND%" -DCMAKE_GENERATOR="%GENERATOR%" %CMAKE_OPTION_LIBS% -P buildall.cmake || exit /b !ERRORLEVEL!
   if exist build rmdir /s /q build
   if exist download rmdir /s /q download
   if exist openssl_%COMPILER%\html rmdir /s /q openssl_%COMPILER%\html
@@ -77,18 +77,18 @@ echo ------------------- APPVEYOR 18 -----------------------------------
 set SNAPSHOT_DIR=snapshot-r%SVNVERSION%-%DATE%_%TIME%-appveyor-%COMPILER_FRIENDLY%
 echo ------------------- APPVEYOR 19 -----------------------------------
 echo "%CMAKE_COMMAND%" .. -G "%GENERATOR%" %CMAKE_OPTION_GENERATE% -DSNAPSHOT_DIR=%SNAPSHOT_DIR% -DSETUP_ZIP=%ZIP_FILE% -DSETUP_EXE=%SETUP_FILE% -DSETUP_RELEASE=%RELEASE%
-"%CMAKE_COMMAND%" .. -G "%GENERATOR%" %CMAKE_OPTION_GENERATE% -DSNAPSHOT_DIR=%SNAPSHOT_DIR% -DSETUP_ZIP=%ZIP_FILE% -DSETUP_EXE=%SETUP_FILE% -DSETUP_RELEASE=%RELEASE%
+"%CMAKE_COMMAND%" .. -G "%GENERATOR%" %CMAKE_OPTION_GENERATE% -DSNAPSHOT_DIR=%SNAPSHOT_DIR% -DSETUP_ZIP=%ZIP_FILE% -DSETUP_EXE=%SETUP_FILE% -DSETUP_RELEASE=%RELEASE% || exit /b !ERRORLEVEL!
 echo ------------------- APPVEYOR 20 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target install %CMAKE_OPTION_BUILD%
-"%CMAKE_COMMAND%" --build . --target install %CMAKE_OPTION_BUILD%
+"%CMAKE_COMMAND%" --build . --target install %CMAKE_OPTION_BUILD% || exit /b !ERRORLEVEL!
 echo ------------------- APPVEYOR 21 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target zip
-"%CMAKE_COMMAND%" --build . --target zip
+"%CMAKE_COMMAND%" --build . --target zip                          || exit /b !ERRORLEVEL!
 
 echo ------------------- APPVEYOR 21 after------------------------------
 dir /b /s /a-d *.exe
 echo ------------------- APPVEYOR 22 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target inno_setup
-"%CMAKE_COMMAND%" --build . --target inno_setup
+"%CMAKE_COMMAND%" --build . --target inno_setup                   || exit /b !ERRORLEVEL!
 echo ------------------- APPVEYOR 23 -----------------------------------
 cd ..
