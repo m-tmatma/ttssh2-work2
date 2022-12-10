@@ -50,8 +50,8 @@ if "%COMPILER%" == "mingw_x64"  (
   set CMAKE_OPTION_GENERATE=%CMAKE_OPTION_GENERATE% -DCMAKE_BUILD_TYPE=Release
 )
 echo ------------------- APPVEYOR 9 -----------------------------------
-cd libs
 echo ------------------- APPVEYOR 10 -----------------------------------
+cd libs
 if not exist openssl11_%COMPILER% (
   "%CMAKE_COMMAND%" -DCMAKE_GENERATOR="%GENERATOR%" %CMAKE_OPTION_LIBS% -P buildall.cmake || exit /b !ERRORLEVEL!
   if exist build rmdir /s /q build
@@ -61,23 +61,24 @@ if not exist openssl11_%COMPILER% (
   if exist ..\buildtools\perl\c rmdir /s /q ..\buildtools\perl\c
   if exist ..\buildtools\download rmdir /s /q ..\buildtools\download
 )
-echo ------------------- APPVEYOR 11 -----------------------------------
 cd ..
+echo ------------------- APPVEYOR 11 -----------------------------------
 echo ------------------- APPVEYOR 12 -----------------------------------
 if not exist %BUILD_DIR% mkdir %BUILD_DIR%
 echo ------------------- APPVEYOR 13 -----------------------------------
-cd %BUILD_DIR%
 echo ------------------- APPVEYOR 14 -----------------------------------
+cd %BUILD_DIR%
 if exist build_config.cmake del build_config.cmake
-echo ------------------- APPVEYOR 15 -----------------------------------
 if exist cmakecache.txt del cmakecache.txt
+echo ------------------- APPVEYOR 15 -----------------------------------
 echo ------------------- APPVEYOR 16 -----------------------------------
-set ZIP_FILE=snapshot-%VERSION%-r%SVNVERSION%-%DATE%_%TIME%-appveyor-%COMPILER_FRIENDLY%.zip
 echo ------------------- APPVEYOR 17 -----------------------------------
-set SETUP_FILE=snapshot-%VERSION%-r%SVNVERSION%-%DATE%_%TIME%-appveyor-%COMPILER_FRIENDLY%
 echo ------------------- APPVEYOR 18 -----------------------------------
-set SNAPSHOT_DIR=snapshot-r%SVNVERSION%-%DATE%_%TIME%-appveyor-%COMPILER_FRIENDLY%
 echo ------------------- APPVEYOR 19 -----------------------------------
+cd %BUILD_DIR%
+set ZIP_FILE=snapshot-%VERSION%-r%SVNVERSION%-%DATE%_%TIME%-appveyor-%COMPILER_FRIENDLY%.zip
+set SETUP_FILE=snapshot-%VERSION%-r%SVNVERSION%-%DATE%_%TIME%-appveyor-%COMPILER_FRIENDLY%
+set SNAPSHOT_DIR=snapshot-r%SVNVERSION%-%DATE%_%TIME%-appveyor-%COMPILER_FRIENDLY%
 echo "%CMAKE_COMMAND%" .. -G "%GENERATOR%" %CMAKE_OPTION_GENERATE% -DSNAPSHOT_DIR=%SNAPSHOT_DIR% -DSETUP_ZIP=%ZIP_FILE% -DSETUP_EXE=%SETUP_FILE% -DSETUP_RELEASE=%RELEASE%
 "%CMAKE_COMMAND%" .. -G "%GENERATOR%" %CMAKE_OPTION_GENERATE% -DSNAPSHOT_DIR=%SNAPSHOT_DIR% -DSETUP_ZIP=%ZIP_FILE% -DSETUP_EXE=%SETUP_FILE% -DSETUP_RELEASE=%RELEASE% || exit /b !ERRORLEVEL!
 echo ------------------- APPVEYOR 20 -----------------------------------
