@@ -64,7 +64,7 @@ if not exist openssl11_%COMPILER% (
   if exist ..\buildtools\download rmdir /s /q ..\buildtools\download
 )
 cd ..
-echo ------------------- APPVEYOR 11 -----------------------------------
+echo ------------------- APPVEYOR 10 -----------------------------------
 if not exist %BUILD_DIR% mkdir %BUILD_DIR%
 echo ------------------- APPVEYOR 13 -----------------------------------
 cd %BUILD_DIR%
