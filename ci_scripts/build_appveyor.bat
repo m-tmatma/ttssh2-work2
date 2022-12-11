@@ -77,7 +77,7 @@ set SETUP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%
 set SNAPSHOT_DIR=snapshot-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%
 echo "%CMAKE_COMMAND%" .. -G "%GENERATOR%" %CMAKE_OPTION_GENERATE% -DSNAPSHOT_DIR=%SNAPSHOT_DIR% -DSETUP_ZIP=%ZIP_FILE% -DSETUP_EXE=%SETUP_FILE% -DSETUP_RELEASE=%RELEASE%
 "%CMAKE_COMMAND%" .. -G "%GENERATOR%" %CMAKE_OPTION_GENERATE% -DSNAPSHOT_DIR=%SNAPSHOT_DIR% -DSETUP_ZIP=%ZIP_FILE% -DSETUP_EXE=%SETUP_FILE% -DSETUP_RELEASE=%RELEASE% || exit /b !ERRORLEVEL!
-echo ------------------- APPVEYOR 20 -----------------------------------
+echo ------------------- APPVEYOR 13 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target install %CMAKE_OPTION_BUILD%
 "%CMAKE_COMMAND%" --build . --target install %CMAKE_OPTION_BUILD% || exit /b !ERRORLEVEL!
 echo ------------------- APPVEYOR 21 -----------------------------------
