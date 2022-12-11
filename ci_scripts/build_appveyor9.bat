@@ -1,6 +1,5 @@
 echo on
 echo ------------------- APPVEYOR 9 -----------------------------------
-echo ------------------- APPVEYOR 10 -----------------------------------
 cd libs
 if not exist openssl11_%COMPILER% (
   "%CMAKE_COMMAND%" -DCMAKE_GENERATOR="%GENERATOR%" %CMAKE_OPTION_LIBS% -P buildall.cmake || exit /b !ERRORLEVEL!
