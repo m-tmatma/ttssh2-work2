@@ -86,8 +86,8 @@ echo "%CMAKE_COMMAND%" --build . --target zip
 
 echo ------------------- APPVEYOR 14 after------------------------------
 dir /b /s /a-d *.exe
-echo ------------------- APPVEYOR 22 -----------------------------------
+echo ------------------- APPVEYOR 15 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target inno_setup
 "%CMAKE_COMMAND%" --build . --target inno_setup                   || exit /b !ERRORLEVEL!
-echo ------------------- APPVEYOR 23 -----------------------------------
+echo ------------------- APPVEYOR 16 -----------------------------------
 cd ..

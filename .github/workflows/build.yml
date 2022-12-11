@@ -124,8 +124,8 @@ jobs:
         run: ci_scripts\build_appveyor14-after.bat
         shell: cmd
 
-      - name: build_appveyor22
-        run: ci_scripts\build_appveyor22.bat
+      - name: build_appveyor15
+        run: ci_scripts\build_appveyor15.bat
         shell: cmd
 
       #- name: build script
