@@ -66,7 +66,7 @@ if not exist openssl11_%COMPILER% (
 cd ..
 echo ------------------- APPVEYOR 10 -----------------------------------
 if not exist %BUILD_DIR% mkdir %BUILD_DIR%
-echo ------------------- APPVEYOR 13 -----------------------------------
+echo ------------------- APPVEYOR 11 -----------------------------------
 cd %BUILD_DIR%
 if exist build_config.cmake del build_config.cmake
 if exist cmakecache.txt del cmakecache.txt
