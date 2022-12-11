@@ -80,11 +80,11 @@ echo "%CMAKE_COMMAND%" .. -G "%GENERATOR%" %CMAKE_OPTION_GENERATE% -DSNAPSHOT_DI
 echo ------------------- APPVEYOR 13 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target install %CMAKE_OPTION_BUILD%
 "%CMAKE_COMMAND%" --build . --target install %CMAKE_OPTION_BUILD% || exit /b !ERRORLEVEL!
-echo ------------------- APPVEYOR 21 -----------------------------------
+echo ------------------- APPVEYOR 14 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target zip
 "%CMAKE_COMMAND%" --build . --target zip                          || exit /b !ERRORLEVEL!
 
-echo ------------------- APPVEYOR 21 after------------------------------
+echo ------------------- APPVEYOR 14 after------------------------------
 dir /b /s /a-d *.exe
 echo ------------------- APPVEYOR 22 -----------------------------------
 echo "%CMAKE_COMMAND%" --build . --target inno_setup

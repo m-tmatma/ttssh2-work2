@@ -116,12 +116,12 @@ jobs:
         run: ci_scripts\build_appveyor13.bat
         shell: cmd
 
-      - name: build_appveyor21
-        run: ci_scripts\build_appveyor21.bat
+      - name: build_appveyor14
+        run: ci_scripts\build_appveyor14.bat
         shell: cmd
 
-      - name: build_appveyor21-after
-        run: ci_scripts\build_appveyor21-after.bat
+      - name: build_appveyor14-after
+        run: ci_scripts\build_appveyor14-after.bat
         shell: cmd
 
       - name: build_appveyor22

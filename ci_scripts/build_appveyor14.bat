@@ -1,5 +1,5 @@
 echo on
-echo ------------------- APPVEYOR 21 -----------------------------------
+echo ------------------- APPVEYOR 14 -----------------------------------
 cd %BUILD_DIR%
 set ZIP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%.zip
 set SETUP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%
