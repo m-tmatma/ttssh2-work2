@@ -1,0 +1,149 @@
+name: build-monolithic
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+  COMPILER: VS_143
+  COMPILER_FRIENDLY: vs2022
+  GENERATOR: "Visual Studio 17 2022"
+  CMAKE_COMMAND: cmake
+  CMAKE_OPTION_LIBS: "-DARCHITECTURE=Win32"
+  CMAKE_OPTION_GENERATE: "-A Win32"
+  CMAKE_OPTION_BUILD: "--config Release"
+  BUILD_DIR: build
+  APPVEYOR_SAVE_CACHE_ON_ERROR: true
+  VERBOSE: 1
+
+jobs:
+  windows:
+    strategy:
+      matrix:
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # see https://github.com/ilammy/msvc-dev-cmd
+      # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64_x86
+          vsversion: 2022
+
+      # - name: "Setup git"
+      #   shell: cmd
+      #   run: git config --global core.autocrlf input
+
+      - uses: actions/checkout@v3
+      - name: curl setup-x86_64.exe
+        run: curl -OL https://www.cygwin.com/setup-x86_64.exe
+        shell: cmd
+
+      # see https://github.com/appveyor/build-images/blob/d208f5ca6495d22ced83d5d39a0c612ceffc36d7/scripts/Windows/install_cygwin.ps1#L10-L16
+      - name: install crygwin
+        #run: cmd /c start /wait setup-x86_64.exe -qnNdO -R C:/cygwin64 -s http://cygwin.mirror.constant.com -l C:/cygwin64/var/cache/setup -P mingw64-i686-gcc -P mingw64-x86_64-gcc  -P mingw64-i686-gcc-g++ -P mingw64-x86_64-gcc-g++ -P gcc-g++ -P cmake -P autoconf -P automake -P bison -P libtool -P make -P python2 -P python -P python38 -P gettext-devel -P intltool -P libiconv -P pkg-config -P wget -P curl
+        run: cmd /c start /wait setup-x86_64.exe -qnNdO -R C:/cygwin64 -s http://cygwin.mirror.constant.com -l C:/cygwin64/var/cache/setup -P python38 -P make --packages cmake --packages cygwin32-gcc-g++ --packages cygwin32-gcc-core
+        shell: cmd
+
+      # - name: "Setup Cygwin"
+      #   uses: cygwin/cygwin-install-action@v2
+      #   with:
+      #     platform: x86_64
+      #     packages: automake make cmake gcc-g++ doxygen graphviz libssl-devel libuuid-devel
+      #     install-dir: c:\cygwin64
+
+    #   - name: build_appveyor0
+    #     run: ci_scripts\build_appveyor0.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor1
+    #     run: ci_scripts\build_appveyor1.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor2
+    #     run: ci_scripts\build_appveyor2.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor3
+    #     run: ci_scripts\build_appveyor3.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor4
+    #     run: ci_scripts\build_appveyor4.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor5
+    #     run: ci_scripts\build_appveyor5.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor5-add
+    #     run: ci_scripts\build_appveyor5-add.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor6
+    #     run: ci_scripts\build_appveyor6.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor7
+    #     run: ci_scripts\build_appveyor7.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor8
+    #     run: ci_scripts\build_appveyor8.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor9
+    #     run: ci_scripts\build_appveyor9.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor10
+    #     run: ci_scripts\build_appveyor10.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor11
+    #     run: ci_scripts\build_appveyor11.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor12
+    #     run: ci_scripts\build_appveyor12.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor13
+    #     run: ci_scripts\build_appveyor13.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor14
+    #     run: ci_scripts\build_appveyor14.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor14-after
+    #     run: ci_scripts\build_appveyor14-after.bat
+    #     shell: cmd
+
+    #   - name: build_appveyor15
+    #     run: ci_scripts\build_appveyor15.bat
+    #     shell: cmd
+
+      - name: build script
+        run: ci_scripts\build_appveyor.bat
+        shell: cmd
+
+      - name: find exe
+        if: always()
+        run: dir /b /s /a-d *.exe
+        shell: cmd
+
+      - name: artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: artifacts
+          path: |
+            build/snapshot*.exe
+          # See https://github.com/actions/upload-artifact#retention-period
+          retention-days: 2
+
+
