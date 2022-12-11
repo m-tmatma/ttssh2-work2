@@ -185,4 +185,13 @@ jobs:
         run: dir /b /s /a-d *.exe
         shell: cmd
 
+      - name: artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: artifacts
+          path: |
+            build/snapshot*.exe
+          # See https://github.com/actions/upload-artifact#retention-period
+          retention-days: 2
+
 
