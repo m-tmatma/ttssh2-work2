@@ -53,7 +53,6 @@ if "%COMPILER%" == "mingw_x64"  (
   set CMAKE_OPTION_GENERATE=%CMAKE_OPTION_GENERATE% -DCMAKE_BUILD_TYPE=Release
 )
 echo ------------------- APPVEYOR 9 -----------------------------------
-echo ------------------- APPVEYOR 10 -----------------------------------
 cd libs
 if not exist openssl11_%COMPILER% (
   "%CMAKE_COMMAND%" -DCMAKE_GENERATOR="%GENERATOR%" %CMAKE_OPTION_LIBS% -P buildall.cmake || exit /b !ERRORLEVEL!
@@ -66,18 +65,12 @@ if not exist openssl11_%COMPILER% (
 )
 cd ..
 echo ------------------- APPVEYOR 11 -----------------------------------
-echo ------------------- APPVEYOR 12 -----------------------------------
 if not exist %BUILD_DIR% mkdir %BUILD_DIR%
 echo ------------------- APPVEYOR 13 -----------------------------------
-echo ------------------- APPVEYOR 14 -----------------------------------
 cd %BUILD_DIR%
 if exist build_config.cmake del build_config.cmake
 if exist cmakecache.txt del cmakecache.txt
 echo ------------------- APPVEYOR 15 -----------------------------------
-echo ------------------- APPVEYOR 16 -----------------------------------
-echo ------------------- APPVEYOR 17 -----------------------------------
-echo ------------------- APPVEYOR 18 -----------------------------------
-echo ------------------- APPVEYOR 19 -----------------------------------
 cd %BUILD_DIR%
 set ZIP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%.zip
 set SETUP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%
