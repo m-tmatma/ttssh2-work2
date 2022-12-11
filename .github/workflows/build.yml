@@ -108,8 +108,8 @@ jobs:
         run: ci_scripts\build_appveyor11.bat
         shell: cmd
 
-      - name: build_appveyor15
-        run: ci_scripts\build_appveyor15.bat
+      - name: build_appveyor12
+        run: ci_scripts\build_appveyor12.bat
         shell: cmd
 
       - name: build_appveyor20

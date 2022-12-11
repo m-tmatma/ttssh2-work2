@@ -70,7 +70,7 @@ echo ------------------- APPVEYOR 11 -----------------------------------
 cd %BUILD_DIR%
 if exist build_config.cmake del build_config.cmake
 if exist cmakecache.txt del cmakecache.txt
-echo ------------------- APPVEYOR 15 -----------------------------------
+echo ------------------- APPVEYOR 12 -----------------------------------
 cd %BUILD_DIR%
 set ZIP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%.zip
 set SETUP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%
