@@ -22,7 +22,7 @@ jobs:
             BUILD_DIR: build
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             VERBOSE: 1
-          - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+          - BUILD_TYPE: Release
             COMPILER: VS_142
             COMPILER_FRIENDLY: vs2019
             GENERATOR: "Visual Studio 16 2019"
