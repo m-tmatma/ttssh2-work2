@@ -45,7 +45,31 @@ jobs:
 
       # see https://github.com/appveyor/build-images/blob/d208f5ca6495d22ced83d5d39a0c612ceffc36d7/scripts/Windows/install_cygwin.ps1#L10-L16
       - name: install crygwin
-        run: cmd /c start /wait setup-x86_64.exe -qnNdO -R C:/cygwin64 -s http://cygwin.mirror.constant.com -l C:/cygwin64/var/cache/setup -P mingw64-i686-gcc -P mingw64-x86_64-gcc  -P mingw64-i686-gcc-g++ -P mingw64-x86_64-gcc-g++ -P gcc-g++ -P cmake -P autoconf -P automake -P bison -P libtool -P make -P python2 -P python -P python38 -P gettext-devel -P intltool -P libiconv -P pkg-config -P wget -P curl
+        run: |
+          cmd /c start /wait setup-x86_64.exe     ^
+            -qnNdO -R C:/cygwin64                 ^
+            -s http://cygwin.mirror.constant.com  ^
+            -l C:/cygwin64/var/cache/setup        ^
+            -P mingw64-i686-gcc       ^
+            -P mingw64-x86_64-gcc     ^
+            -P mingw64-i686-gcc-g++   ^
+            -P mingw64-x86_64-gcc-g++ ^
+            -P gcc-g++                ^
+            -P cmake                  ^
+            -P autoconf               ^
+            -P automake               ^
+            -P bison                  ^
+            -P libtool                ^
+            -P make                   ^
+            -P python2                ^
+            -P python                 ^
+            -P python38               ^
+            -P gettext-devel          ^
+            -P intltool               ^
+            -P libiconv               ^
+            -P pkg-config             ^
+            -P wget                   ^
+            -P curl
         shell: cmd
 
       # - name: "Setup Cygwin"
