@@ -6,26 +6,50 @@ on:
   pull_request:
     branches: [ "**" ]
 
-env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  BUILD_TYPE: Release
-  COMPILER: VS_143
-  COMPILER_FRIENDLY: vs2022
-  GENERATOR: "Visual Studio 17 2022"
-  CMAKE_COMMAND: cmake
-  CMAKE_OPTION_LIBS: "-DARCHITECTURE=Win32"
-  CMAKE_OPTION_GENERATE: "-A Win32"
-  CMAKE_OPTION_BUILD: "--config Release"
-  BUILD_DIR: build
-  APPVEYOR_SAVE_CACHE_ON_ERROR: true
-  VERBOSE: 1
-
 jobs:
   windows:
     strategy:
       matrix:
-        os: [windows-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - BUILD_TYPE: Release
+            COMPILER: VS_143
+            COMPILER_FRIENDLY: vs2022
+            GENERATOR: "Visual Studio 17 2022"
+            CMAKE_COMMAND: cmake
+            CMAKE_OPTION_LIBS: "-DARCHITECTURE=Win32"
+            CMAKE_OPTION_GENERATE: "-A Win32"
+            CMAKE_OPTION_BUILD: "--config Release"
+            BUILD_DIR: build
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            VERBOSE: 1
+          - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2019
+            COMPILER: VS_142
+            COMPILER_FRIENDLY: vs2019
+            GENERATOR: "Visual Studio 16 2019"
+            CMAKE_COMMAND: cmake
+            CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
+            CMAKE_OPTION_GENERATE: "-A Win32"
+            CMAKE_OPTION_BUILD: --config Release
+            BUILD_DIR: build
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            #APPVEYOR_CACHE_SKIP_RESTORE: true
+            VERBOSE: 1
+
+    env:
+      # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+      BUILD_TYPE: ${{ matrix.BUILD_TYPE }}
+      COMPILER: ${{ matrix.COMPILER }}
+      COMPILER_FRIENDLY: ${{ matrix.COMPILER_FRIENDLY }}
+      GENERATOR: ${{ matrix.GENERATOR }}
+      CMAKE_COMMAND: ${{ matrix.BUICMAKE_COMMANDLD_TYPE }}
+      CMAKE_OPTION_LIBS: ${{ matrix.CMAKE_OPTION_LIBS }}
+      CMAKE_OPTION_GENERATE: ${{ matrix.CMAKE_OPTION_GENERATE }}
+      CMAKE_OPTION_BUILD: ${{ matrix.CMAKE_OPTION_BUILD }}
+      BUILD_DIR: ${{ matrix.BUILD_DIR }}
+      APPVEYOR_SAVE_CACHE_ON_ERROR: ${{ matrix.APPVEYOR_SAVE_CACHE_ON_ERROR }}
+      VERBOSE: ${{ matrix.VERBOSE }}
+
+    runs-on: windows-latest
     steps:
       # see https://github.com/ilammy/msvc-dev-cmd
       # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
