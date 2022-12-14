@@ -21,6 +21,7 @@ jobs:
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             VERBOSE: 1
             vsversion: 2022
+            toolset: 14.3
 
           - BUILD_TYPE: Release
             COMPILER: VS_142
@@ -33,6 +34,7 @@ jobs:
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             VERBOSE: 1
             vsversion: 2019
+            toolset: 14.2
 
           - BUILD_TYPE: Release
             COMPILER: VS_142_x64
@@ -44,6 +46,8 @@ jobs:
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2019
+            toolset: 14.2
+
 
           #- BUILD_TYPE: Release
           #  COMPILER: VS_90
@@ -55,6 +59,7 @@ jobs:
           #  APPVEYOR_SAVE_CACHE_ON_ERROR: true
           #  #APPVEYOR_CACHE_SKIP_RESTORE: true
           #  vsversion: 2008
+          #  toolset: 14.2
 
           - BUILD_TYPE: Release
             COMPILER: mingw
@@ -68,6 +73,7 @@ jobs:
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2022
+            toolset: 14.2
 
           - BUILD_TYPE: Release
             COMPILER: mingw_x64
@@ -81,6 +87,7 @@ jobs:
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2022
+            toolset: 14.2
 
           - BUILD_TYPE: Release
             COMPILER: mingw
@@ -94,6 +101,7 @@ jobs:
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2022
+            toolset: 14.2
 
           - BUILD_TYPE: Release
             COMPILER: mingw_x64
@@ -107,6 +115,7 @@ jobs:
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2022
+            toolset: 14.2
 
     env:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -130,6 +139,7 @@ jobs:
         with:
           arch: amd64_x86
           vsversion: ${{ matrix.vsversion }}
+          toolset: ${{ matrix.toolset }}
 
       # - name: "Setup git"
       #   shell: cmd
