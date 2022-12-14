@@ -102,14 +102,14 @@ copy nul %dst%\portable.ini
 exit /b
 
 :help
-echo Tera Termï¿½ï¿½ï¿½rï¿½ï¿½ï¿½hï¿½ï¿½ï¿½é‚½ï¿½ß‚É•Kï¿½vï¿½Èƒ\ï¿½[ï¿½Xï¿½Rï¿½[ï¿½hï¿½ï¿½ï¿½ï¿½ï¿½×‚ÄƒRï¿½ï¿½ï¿½pï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Ü‚ï¿½ï¿½B(Compiling ALL source codes)
+echo Tera Term‚ğƒrƒ‹ƒh‚·‚é‚½‚ß‚É•K—v‚Èƒ\[ƒXƒR[ƒh‚ğ‚·‚×‚ÄƒRƒ“ƒpƒCƒ‹‚µ‚Ü‚·B(Compiling ALL source codes)
 echo.
-echo   %0          ï¿½Êï¿½Ìƒrï¿½ï¿½ï¿½h(Normal building)
-echo   %0 rebuild  ï¿½ï¿½ï¿½rï¿½ï¿½ï¿½h(Re-building)
-echo   %0 plugins  ï¿½vï¿½ï¿½ï¿½Oï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Ü‚Şƒrï¿½ï¿½ï¿½h(Building with all plugins)
-echo   %0 release  ï¿½Êï¿½Ìƒrï¿½ï¿½ï¿½h + ï¿½vï¿½ï¿½ï¿½Oï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Ü‚ï¿½ + ï¿½tï¿½Hï¿½ï¿½ï¿½_ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½(Normal + Plugins building + unique folder naming)
-echo      ï¿½Aï¿½[ï¿½Jï¿½Cï¿½uï¿½Åƒï¿½ï¿½ï¿½ï¿½[ï¿½Xï¿½ì¬ï¿½p(for archive version released)
-echo   %0 rebuild ^>build.log 2^>^&1  ï¿½rï¿½ï¿½ï¿½hï¿½ï¿½ï¿½Oï¿½ï¿½ï¿½Ìæ‚·ï¿½ï¿½(Retrieve building log)
+echo   %0          ’Êí‚Ìƒrƒ‹ƒh(Normal building)
+echo   %0 rebuild  ƒŠƒrƒ‹ƒh(Re-building)
+echo   %0 plugins  ƒvƒ‰ƒOƒCƒ“î•ñŠÜ‚Şƒrƒ‹ƒh(Building with all plugins)
+echo   %0 release  ’Êí‚Ìƒrƒ‹ƒh + ƒvƒ‰ƒOƒCƒ“‚ğŠÜ‚Ş + ƒtƒHƒ‹ƒ_–¼‚ª“Áê(Normal + Plugins building + unique folder naming)
+echo      ƒA[ƒJƒCƒu”ÅƒŠƒŠ[ƒXì¬—p(for archive version released)
+echo   %0 rebuild ^>build.log 2^>^&1  ƒrƒ‹ƒhƒƒO‚ğÌæ‚·‚é(Retrieve building log)
 echo.
 exit /b
 
@@ -119,6 +119,6 @@ echo ===================================================
 echo ================= E R R O R =======================
 echo ===================================================
 echo.
-echo ï¿½rï¿½ï¿½ï¿½hï¿½Éï¿½ï¿½sï¿½ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½ (Failed to build source code)
+echo ƒrƒ‹ƒh‚É¸”s‚µ‚Ü‚µ‚½ (Failed to build source code)
 exit /b
 
