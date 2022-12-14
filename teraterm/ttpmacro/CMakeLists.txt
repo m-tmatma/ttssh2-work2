@@ -90,6 +90,9 @@ set_target_properties(
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/"
   )
 
+  message("CMAKE_CURRENT_SOURCE_DIR: ${CMAKE_CURRENT_SOURCE_DIR}")
+  message("ONIGURUMA_INCLUDE_DIRS: ${ONIGURUMA_INCLUDE_DIRS}")
+  message("SFMT_INCLUDE_DIRS: ${SFMT_INCLUDE_DIRS}")
 target_include_directories(
   ${PACKAGE_NAME}
   PRIVATE
