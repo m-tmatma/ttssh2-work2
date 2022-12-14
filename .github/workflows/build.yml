@@ -20,6 +20,7 @@ jobs:
             CMAKE_OPTION_BUILD: "--config Release"
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             VERBOSE: 1
+            vsversion: 2022
 
           - BUILD_TYPE: Release
             COMPILER: VS_142
@@ -31,6 +32,7 @@ jobs:
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             VERBOSE: 1
+            vsversion: 2019
 
           - BUILD_TYPE: Release
             COMPILER: VS_142_x64
@@ -41,6 +43,7 @@ jobs:
             CMAKE_OPTION_BUILD: --config Release
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2019
 
           - BUILD_TYPE: Release
             COMPILER: VS_90
@@ -51,6 +54,7 @@ jobs:
             CMAKE_OPTION_BUILD: --config Release
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2008
 
           - BUILD_TYPE: Release
             COMPILER: mingw
@@ -63,6 +67,7 @@ jobs:
             MINGW_CXX: g++
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2022
 
           - BUILD_TYPE: Release
             COMPILER: mingw_x64
@@ -75,6 +80,7 @@ jobs:
             MINGW_CXX: g++
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2022
 
           - BUILD_TYPE: Release
             COMPILER: mingw
@@ -87,6 +93,7 @@ jobs:
             MINGW_CXX: clang++
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2022
 
           - BUILD_TYPE: Release
             COMPILER: mingw_x64
@@ -99,6 +106,7 @@ jobs:
             MINGW_CXX: clang++
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2022
 
     env:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -121,7 +129,7 @@ jobs:
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64_x86
-          vsversion: 2022
+          vsversion: ${{ matrix.vsversion }}
 
       # - name: "Setup git"
       #   shell: cmd
