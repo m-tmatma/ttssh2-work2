@@ -169,4 +169,9 @@ jobs:
           # See https://github.com/actions/upload-artifact#retention-period
           retention-days: 2
 
-
+      - name: show build cache
+        if: always()
+        run: |
+          tree libs /F
+          tree buildtools /F
+        shell: cmd

@@ -113,6 +113,10 @@ artifacts:
   - path: build\buildinfo.txt
 
 on_success:
+  - tree libs /F
+  - tree buildtools /F
   - ci_scripts\notify.bat success
 on_failure:
+  - tree libs /F
+  - tree buildtools /F
   - ci_scripts\notify.bat failure
