@@ -15,7 +15,6 @@ jobs:
             COMPILER: VS_143
             COMPILER_FRIENDLY: vs2022
             GENERATOR: "Visual Studio 17 2022"
-            CMAKE_COMMAND: cmake
             CMAKE_OPTION_LIBS: "-DARCHITECTURE=Win32"
             CMAKE_OPTION_GENERATE: "-A Win32"
             CMAKE_OPTION_BUILD: "--config Release"
@@ -27,7 +26,6 @@ jobs:
             COMPILER: VS_142
             COMPILER_FRIENDLY: vs2019
             GENERATOR: "Visual Studio 16 2019"
-            CMAKE_COMMAND: cmake
             CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
             CMAKE_OPTION_GENERATE: "-A Win32"
             CMAKE_OPTION_BUILD: --config Release
@@ -40,7 +38,6 @@ jobs:
             COMPILER: VS_142_x64
             COMPILER_FRIENDLY: vs2019_x64
             GENERATOR: "Visual Studio 16 2019"
-            CMAKE_COMMAND: cmake
             CMAKE_OPTION_LIBS: -DARCHITECTURE=x64
             CMAKE_OPTION_GENERATE: "-A x64"
             CMAKE_OPTION_BUILD: --config Release
@@ -52,7 +49,6 @@ jobs:
             COMPILER: VS_90
             COMPILER_FRIENDLY: vs2008
             GENERATOR: "Visual Studio 9 2008"
-            CMAKE_COMMAND: cmake
             CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
             CMAKE_OPTION_GENERATE: "-A Win32"
             CMAKE_OPTION_BUILD: --config Release
@@ -64,7 +60,6 @@ jobs:
             COMPILER: mingw
             COMPILER_FRIENDLY: mingw_gcc_win32
             GENERATOR: "Unix Makefiles"
-            CMAKE_COMMAND: cmake
             CMAKE_OPTION_LIBS:
             CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
             CMAKE_OPTION_BUILD:
@@ -78,7 +73,6 @@ jobs:
             COMPILER: mingw_x64
             COMPILER_FRIENDLY: mingw_gcc_x64
             GENERATOR: "Unix Makefiles"
-            CMAKE_COMMAND: cmake
             CMAKE_OPTION_LIBS:
             CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
             CMAKE_OPTION_BUILD:
@@ -92,7 +86,6 @@ jobs:
             COMPILER: mingw
             COMPILER_FRIENDLY: mingw_clang_win32
             GENERATOR: "Unix Makefiles"
-            CMAKE_COMMAND: cmake
             CMAKE_OPTION_LIBS:
             CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
             CMAKE_OPTION_BUILD:
@@ -106,7 +99,6 @@ jobs:
             COMPILER: mingw_x64
             COMPILER_FRIENDLY: mingw_clang_x64
             GENERATOR: "Unix Makefiles"
-            CMAKE_COMMAND: cmake
             CMAKE_OPTION_LIBS:
             CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
             CMAKE_OPTION_BUILD:
