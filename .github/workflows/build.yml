@@ -22,6 +22,7 @@ jobs:
             VERBOSE: 1
             vsversion: 2022
             toolset: 14.3
+            runs-on: windows-2022
 
           - BUILD_TYPE: Release
             COMPILER: VS_142
@@ -35,6 +36,7 @@ jobs:
             VERBOSE: 1
             vsversion: 2019
             toolset: 14.2
+            runs-on: windows-2019
 
           - BUILD_TYPE: Release
             COMPILER: VS_142_x64
@@ -47,6 +49,7 @@ jobs:
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2019
             toolset: 14.2
+            runs-on: windows-2019
 
 
           #- BUILD_TYPE: Release
@@ -74,6 +77,7 @@ jobs:
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2022
             toolset: 14.2
+            runs-on: windows-2022
 
           - BUILD_TYPE: Release
             COMPILER: mingw_x64
@@ -88,6 +92,7 @@ jobs:
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2022
             toolset: 14.2
+            runs-on: windows-2022
 
           - BUILD_TYPE: Release
             COMPILER: mingw
@@ -102,6 +107,7 @@ jobs:
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2022
             toolset: 14.2
+            runs-on: windows-2022
 
           - BUILD_TYPE: Release
             COMPILER: mingw_x64
@@ -116,6 +122,7 @@ jobs:
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2022
             toolset: 14.2
+            runs-on: windows-2022
 
     env:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -131,7 +138,7 @@ jobs:
       APPVEYOR_SAVE_CACHE_ON_ERROR: ${{ matrix.APPVEYOR_SAVE_CACHE_ON_ERROR }}
       VERBOSE: ${{ matrix.VERBOSE }}
 
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runs-on }}
     steps:
       # see https://github.com/ilammy/msvc-dev-cmd
       # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
