@@ -146,6 +146,8 @@ jobs:
       CMAKE_OPTION_BUILD: ${{ matrix.CMAKE_OPTION_BUILD }}
       BUILD_DIR: ${{ matrix.BUILD_DIR }}
       APPVEYOR_SAVE_CACHE_ON_ERROR: ${{ matrix.APPVEYOR_SAVE_CACHE_ON_ERROR }}
+      MINGW_CC: ${{ matrix.MINGW_CC }}
+      MINGW_CXX: ${{ matrix.MINGW_CXX }}
       VERBOSE: ${{ matrix.VERBOSE }}
 
     runs-on: ${{ matrix.runs-on }}
