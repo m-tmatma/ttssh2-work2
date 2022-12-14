@@ -45,16 +45,16 @@ jobs:
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             vsversion: 2019
 
-          - BUILD_TYPE: Release
-            COMPILER: VS_90
-            COMPILER_FRIENDLY: vs2008
-            GENERATOR: "Visual Studio 9 2008"
-            CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
-            CMAKE_OPTION_GENERATE: "-A Win32"
-            CMAKE_OPTION_BUILD: --config Release
-            APPVEYOR_SAVE_CACHE_ON_ERROR: true
-            #APPVEYOR_CACHE_SKIP_RESTORE: true
-            vsversion: 2008
+          #- BUILD_TYPE: Release
+          #  COMPILER: VS_90
+          #  COMPILER_FRIENDLY: vs2008
+          #  GENERATOR: "Visual Studio 9 2008"
+          #  CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
+          #  CMAKE_OPTION_GENERATE: "-A Win32"
+          #  CMAKE_OPTION_BUILD: --config Release
+          #  APPVEYOR_SAVE_CACHE_ON_ERROR: true
+          #  #APPVEYOR_CACHE_SKIP_RESTORE: true
+          #  vsversion: 2008
 
           - BUILD_TYPE: Release
             COMPILER: mingw
