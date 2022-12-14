@@ -2,7 +2,7 @@ version: 0.1.{build}
 
 skip_commits:
   files:
-    - .github/*
+    - .github/workflows/build.yml
 
 environment:
   matrix:
