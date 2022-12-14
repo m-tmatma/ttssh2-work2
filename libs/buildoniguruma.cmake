@@ -7,14 +7,21 @@
 
 include(script_support.cmake)
 
+message("-------------------------------------------------------------")
 set(EXTRACT_DIR "${CMAKE_CURRENT_LIST_DIR}/build/oniguruma/src")
 set(SRC_DIR "${EXTRACT_DIR}/oniguruma")
 set(INSTALL_DIR "${CMAKE_CURRENT_LIST_DIR}/oniguruma_${TOOLSET}")
 set(BUILD_DIR "${CMAKE_CURRENT_LIST_DIR}/build/oniguruma/build_${TOOLSET}")
+message("INSTALL_DIR: ${INSTALL_DIR}")
 if(("${CMAKE_GENERATOR}" MATCHES "Win64") OR ("$ENV{MSYSTEM_CHOST}" STREQUAL "x86_64-w64-mingw32") OR ("${ARCHITECTURE}" MATCHES "x64") OR ("${CMAKE_COMMAND}" MATCHES "mingw64"))
   set(INSTALL_DIR "${INSTALL_DIR}_x64")
   set(BUILD_DIR "${BUILD_DIR}_x64")
 endif()
+message("INSTALL_DIR: ${INSTALL_DIR}")
+message("CMAKE_GENERATOR: ${CMAKE_GENERATOR}")
+message("MSYSTEM_CHOST: $ENV{MSYSTEM_CHOST}")
+message("ARCHITECTURE: ${ARCHITECTURE}")
+message("-------------------------------------------------------------")
 
 #message("BUILD_DIR=${BUILD_DIR}")
 #message("INSTALL_DIR=${INSTALL_DIR}")
