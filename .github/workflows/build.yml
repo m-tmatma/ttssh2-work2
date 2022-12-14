@@ -18,7 +18,6 @@ jobs:
             CMAKE_OPTION_LIBS: "-DARCHITECTURE=Win32"
             CMAKE_OPTION_GENERATE: "-A Win32"
             CMAKE_OPTION_BUILD: "--config Release"
-            BUILD_DIR: build
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             VERBOSE: 1
 
@@ -29,7 +28,6 @@ jobs:
             CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
             CMAKE_OPTION_GENERATE: "-A Win32"
             CMAKE_OPTION_BUILD: --config Release
-            BUILD_DIR: build
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
             VERBOSE: 1
@@ -41,7 +39,6 @@ jobs:
             CMAKE_OPTION_LIBS: -DARCHITECTURE=x64
             CMAKE_OPTION_GENERATE: "-A x64"
             CMAKE_OPTION_BUILD: --config Release
-            BUILD_DIR: build
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
 
@@ -52,7 +49,6 @@ jobs:
             CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
             CMAKE_OPTION_GENERATE: "-A Win32"
             CMAKE_OPTION_BUILD: --config Release
-            BUILD_DIR: build
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
             #APPVEYOR_CACHE_SKIP_RESTORE: true
 
@@ -63,7 +59,6 @@ jobs:
             CMAKE_OPTION_LIBS:
             CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
             CMAKE_OPTION_BUILD:
-            BUILD_DIR: build
             MINGW_CC: gcc
             MINGW_CXX: g++
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
@@ -76,7 +71,6 @@ jobs:
             CMAKE_OPTION_LIBS:
             CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
             CMAKE_OPTION_BUILD:
-            BUILD_DIR: build
             MINGW_CC: gcc
             MINGW_CXX: g++
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
@@ -89,7 +83,6 @@ jobs:
             CMAKE_OPTION_LIBS:
             CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
             CMAKE_OPTION_BUILD:
-            BUILD_DIR: build
             MINGW_CC: clang
             MINGW_CXX: clang++
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
@@ -102,7 +95,6 @@ jobs:
             CMAKE_OPTION_LIBS:
             CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
             CMAKE_OPTION_BUILD:
-            BUILD_DIR: build
             MINGW_CC: clang
             MINGW_CXX: clang++
             APPVEYOR_SAVE_CACHE_ON_ERROR: true
@@ -118,7 +110,7 @@ jobs:
       CMAKE_OPTION_LIBS: ${{ matrix.CMAKE_OPTION_LIBS }}
       CMAKE_OPTION_GENERATE: ${{ matrix.CMAKE_OPTION_GENERATE }}
       CMAKE_OPTION_BUILD: ${{ matrix.CMAKE_OPTION_BUILD }}
-      BUILD_DIR: ${{ matrix.BUILD_DIR }}
+      BUILD_DIR: build
       APPVEYOR_SAVE_CACHE_ON_ERROR: ${{ matrix.APPVEYOR_SAVE_CACHE_ON_ERROR }}
       VERBOSE: ${{ matrix.VERBOSE }}
 
