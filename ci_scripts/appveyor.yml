@@ -103,9 +103,9 @@ build: off
 build_script:
   - call ci_scripts\build_appveyor.bat
 
-cache:
-  - libs
-  - buildtools
+#cache:
+#  - libs
+#  - buildtools
 
 artifacts:
   - path: build\%ZIP_FILE%
