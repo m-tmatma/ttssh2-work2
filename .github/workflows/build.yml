@@ -147,7 +147,7 @@ jobs:
       VERBOSE: ${{ matrix.VERBOSE }}
 
     runs-on: ${{ matrix.runs-on }}
-    continue-on-error: true
+    #continue-on-error: true
     steps:
       # see https://github.com/ilammy/msvc-dev-cmd
       # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
