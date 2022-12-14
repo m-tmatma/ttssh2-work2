@@ -1,5 +1,9 @@
 version: 0.1.{build}
 
+skip_commits:
+  files:
+    - .github/*
+
 environment:
   matrix:
     - APPVEYOR_BUILD_WORKER_IMAGE: Visual Studio 2022
