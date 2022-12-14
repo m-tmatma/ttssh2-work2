@@ -9,6 +9,8 @@ on:
 jobs:
   windows:
     strategy:
+      # See https://docs.github.com/ja/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstrategyfail-fast
+      fail-fast: false
       matrix:
         include:
           - BUILD_TYPE: Release
