@@ -7,7 +7,7 @@
 
 include(script_support.cmake)
 
-message("-------------------------------------------------------------")
+message("**************************************************************")
 set(EXTRACT_DIR "${CMAKE_CURRENT_LIST_DIR}/build/oniguruma/src")
 set(SRC_DIR "${EXTRACT_DIR}/oniguruma")
 set(INSTALL_DIR "${CMAKE_CURRENT_LIST_DIR}/oniguruma_${TOOLSET}")
@@ -21,7 +21,7 @@ message("INSTALL_DIR: ${INSTALL_DIR}")
 message("CMAKE_GENERATOR: ${CMAKE_GENERATOR}")
 message("MSYSTEM_CHOST: $ENV{MSYSTEM_CHOST}")
 message("ARCHITECTURE: ${ARCHITECTURE}")
-message("-------------------------------------------------------------")
+message("**************************************************************")
 
 #message("BUILD_DIR=${BUILD_DIR}")
 #message("INSTALL_DIR=${INSTALL_DIR}")
