@@ -6,33 +6,95 @@ on:
   pull_request:
     branches: [ "**" ]
 
-env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  BUILD_TYPE: Release
-  COMPILER: VS_143
-  COMPILER_FRIENDLY: vs2022
-  GENERATOR: "Visual Studio 17 2022"
-  CMAKE_COMMAND: cmake
-  CMAKE_OPTION_LIBS: "-DARCHITECTURE=Win32"
-  CMAKE_OPTION_GENERATE: "-A Win32"
-  CMAKE_OPTION_BUILD: "--config Release"
-  BUILD_DIR: build
-  APPVEYOR_SAVE_CACHE_ON_ERROR: true
-  VERBOSE: 1
-
 jobs:
   windows:
     strategy:
+      # See https://docs.github.com/ja/actions/using-workflows/workflow-syntax-for-github-actions#jobsjob_idstrategyfail-fast
+      fail-fast: false
       matrix:
-        os: [windows-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          - BUILD_TYPE: Release
+            COMPILER: VS_143
+            COMPILER_FRIENDLY: vs2022
+            GENERATOR: "Visual Studio 17 2022"
+            CMAKE_OPTION_LIBS: "-DARCHITECTURE=Win32"
+            CMAKE_OPTION_GENERATE: "-A Win32"
+            CMAKE_OPTION_BUILD: "--config Release"
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            VERBOSE: 1
+            vsversion: 2022
+            toolset: 14.3
+            runs-on: windows-2022
+            BUILD_DIR: build
+
+          - BUILD_TYPE: Release
+            COMPILER: VS_142
+            COMPILER_FRIENDLY: vs2019
+            GENERATOR: "Visual Studio 16 2019"
+            CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
+            CMAKE_OPTION_GENERATE: "-A Win32"
+            CMAKE_OPTION_BUILD: --config Release
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            #APPVEYOR_CACHE_SKIP_RESTORE: true
+            VERBOSE: 1
+            vsversion: 2019
+            toolset: 14.2
+            runs-on: windows-2019
+            BUILD_DIR: build
+
+          - BUILD_TYPE: Release
+            COMPILER: VS_142_x64
+            COMPILER_FRIENDLY: vs2019_x64
+            GENERATOR: "Visual Studio 16 2019"
+            CMAKE_OPTION_LIBS: -DARCHITECTURE=x64
+            CMAKE_OPTION_GENERATE: "-A x64"
+            CMAKE_OPTION_BUILD: --config Release
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2019
+            toolset: 14.2
+            runs-on: windows-2019
+            BUILD_DIR: build
+
+
+          #- BUILD_TYPE: Release
+          #  COMPILER: VS_90
+          #  COMPILER_FRIENDLY: vs2008
+          #  GENERATOR: "Visual Studio 9 2008"
+          #  CMAKE_OPTION_LIBS: -DARCHITECTURE=Win32
+          #  CMAKE_OPTION_GENERATE: "-A Win32"
+          #  CMAKE_OPTION_BUILD: --config Release
+          #  APPVEYOR_SAVE_CACHE_ON_ERROR: true
+          #  #APPVEYOR_CACHE_SKIP_RESTORE: true
+          #  vsversion: 2008
+          #  toolset: 14.2
+
+    env:
+      # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+      BUILD_TYPE: ${{ matrix.BUILD_TYPE }}
+      COMPILER: ${{ matrix.COMPILER }}
+      COMPILER_FRIENDLY: ${{ matrix.COMPILER_FRIENDLY }}
+      GENERATOR: ${{ matrix.GENERATOR }}
+      CMAKE_COMMAND: cmake
+      CMAKE_OPTION_LIBS: ${{ matrix.CMAKE_OPTION_LIBS }}
+      CMAKE_OPTION_GENERATE: ${{ matrix.CMAKE_OPTION_GENERATE }}
+      CMAKE_OPTION_BUILD: ${{ matrix.CMAKE_OPTION_BUILD }}
+      BUILD_DIR: ${{ matrix.BUILD_DIR }}
+      APPVEYOR_SAVE_CACHE_ON_ERROR: ${{ matrix.APPVEYOR_SAVE_CACHE_ON_ERROR }}
+      MINGW_CC: ${{ matrix.MINGW_CC }}
+      MINGW_CXX: ${{ matrix.MINGW_CXX }}
+      VERBOSE: ${{ matrix.VERBOSE }}
+
+    runs-on: ${{ matrix.runs-on }}
+    #continue-on-error: true
     steps:
       # see https://github.com/ilammy/msvc-dev-cmd
       # see https://zenn.dev/tan_y/articles/cc7a1ad3f219b0
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64_x86
-          vsversion: 2022
+          vsversion: ${{ matrix.vsversion }}
+          toolset: ${{ matrix.toolset }}
 
       # - name: "Setup git"
       #   shell: cmd
@@ -133,6 +195,10 @@ jobs:
 
       - name: build_appveyor15
         run: ci_scripts\build_appveyor15.bat
+        shell: cmd
+
+      - name: find oniguruma.h
+        run: dir /b /s /a-d oniguruma.h
         shell: cmd
 
       - name: build_appveyor20
