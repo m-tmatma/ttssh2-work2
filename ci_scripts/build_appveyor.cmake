@@ -27,10 +27,14 @@ include(${BUILD_DIR}/build_config.cmake)
 if(NOT DEFINED SVNVERSION)
   set(SVNVERSION "0000")
 endif()
-
-set(ZIP_FILE "snapshot-${VERSION}-r${SVNVERSION}-appveyor-${COMPILER_FRIENDLY}.zip")
-set(SETUP_FILE "snapshot-${VERSION}-r${SVNVERSION}-appveyor-${COMPILER_FRIENDLY}")
-set(SNAPSHOT_DIR "snapshot-${VERSION}-r${SVNVERSION}-appveyor-${COMPILER_FRIENDLY}")
+if(DEFINED GITREV)
+  set(REVSION "${GITREV}")
+else
+  set(REVSION "r${SVNVERSION}")
+endif()
+set(ZIP_FILE "snapshot-${VERSION}-${REVSION}-appveyor-${COMPILER_FRIENDLY}.zip")
+set(SETUP_FILE "snapshot-${VERSION}-${REVSION}-appveyor-${COMPILER_FRIENDLY}")
+set(SNAPSHOT_DIR "snapshot-${VERSION}-${REVSION}-appveyor-${COMPILER_FRIENDLY}")
 
 list(APPEND BUILD_OPTIONS "--config" "Release")
 list(APPEND GENERATE_OPTIONS "-DSNAPSHOT_DIR=${SNAPSHOT_DIR}" "-DSETUP_ZIP=${ZIP_FILE}" "-DSETUP_EXE=${SETUP_FILE}" "-DSETUP_RELEASE=${RELEASE}")

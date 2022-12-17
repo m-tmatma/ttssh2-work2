@@ -1,9 +1,14 @@
 echo on
 echo ------------------- APPVEYOR 22 -----------------------------------
 cd %BUILD_DIR%
-set ZIP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%.zip
-set SETUP_FILE=snapshot-%VERSION%-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%
-set SNAPSHOT_DIR=snapshot-r%SVNVERSION%-appveyor-%COMPILER_FRIENDLY%
+if "%GITREV%"=="" (
+    set REVISION="%GITREV%"
+) else (
+    set REVISION="r%SVNVERSION%"
+)
+set ZIP_FILE=snapshot-%VERSION%-%REVISION%-appveyor-%COMPILER_FRIENDLY%.zip
+set SETUP_FILE=snapshot-%VERSION%-%REVISION%-appveyor-%COMPILER_FRIENDLY%
+set SNAPSHOT_DIR=snapshot-%REVISION%-appveyor-%COMPILER_FRIENDLY%
 
 mkdir %SNAPSHOT_DIR%\cygterm+-i686
 mkdir %SNAPSHOT_DIR%\cygterm+-x86_64
