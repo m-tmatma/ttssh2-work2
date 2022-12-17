@@ -244,6 +244,15 @@ jobs:
         run: dir /b /s /a-d *.exe
         shell: cmd
 
+      - name: artifacts svnversion.h
+        uses: actions/upload-artifact@v3
+        with:
+          name: artifacts-svnversion-build${{github.run_number}}-id${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
+          path: |
+            build/**/svnversion.h
+          # See https://github.com/actions/upload-artifact#retention-period
+          retention-days: 2
+
       - name: artifacts
         uses: actions/upload-artifact@v3
         with:
