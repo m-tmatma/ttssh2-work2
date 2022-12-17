@@ -93,6 +93,7 @@ sub write_info_header
 {
 	my ($out_header, %svninfo) = @_;
 	my $revision = $svninfo{'Revision'};
+	my $gitrevision = $svninfo{'GitRevision'};
 
 	open(my $FD, ">$out_header") || die "error $out_header";
 	print $FD "/* $header */\n";
@@ -101,6 +102,11 @@ sub write_info_header
 		print $FD "#define SVNVERSION $revision\n";
 	} else {
 		print $FD "#undef SVNVERSION\n";
+	}
+	if ($gitrevision ne '') {
+		print $FD "#define GITREV $gitrevision\n";
+	} else {
+		print $FD "#undef GITREV\n";
 	}
 	if ($svninfo{'release'}) {
 		print $FD "#define TERATERM_RELEASE 1\n";
@@ -115,6 +121,7 @@ sub write_info_bat
 {
 	my ($out_header, %svninfo) = @_;
 	my $revision = $svninfo{'Revision'};
+	my $gitrevision = $svninfo{'GitRevision'};
 
 	open(my $FD, ">$out_bat") || die "error $out_bat";
 	print $FD "\@rem $header\n";
@@ -123,6 +130,11 @@ sub write_info_bat
 		print $FD "set SVNVERSION=$revision\n";
 	} else {
 		print $FD "set SVNVERSION=unknown\n";
+	}
+	if ($gitrevision ne '') {
+		print $FD "set GITREV=$gitrevision\n";
+	} else {
+		print $FD "set GITREV=unknown\n";
 	}
 	print $FD "set RELEASE=$svninfo{'release'}\n";
 	print $FD "set DATE=$date\n";
@@ -134,6 +146,7 @@ sub write_info_cmake
 {
 	my ($out_header, %svninfo) = @_;
 	my $revision = $svninfo{'Revision'};
+	my $gitrevision = $svninfo{'GitRevision'};
 
 	open(my $FD, ">$out_cmake") || die "error $out_cmake";
 	print $FD "# $header\n";
@@ -142,6 +155,11 @@ sub write_info_cmake
 		print $FD "set(SVNVERSION \"$revision\")\n";
 	} else {
 		print $FD "#set(SVNVERSION \"0000\")\n";
+	}
+	if ($revision ne '') {
+		print $FD "set(GITVERSION \"$gitrevision\")\n";
+	} else {
+		print $FD "#set(GITVERSION \"\")\n";
 	}
 	print $FD "set(RELEASE $svninfo{'release'})\n";
 	print $FD "set(DATE \"$date\")\n";
@@ -254,7 +272,7 @@ elsif(-d "$source_root/.git" && $git ne "") {
 			# use git svn log
 			my $revision = `\"$git\" rev-parse --short HEAD`;
 			$revision =~ s/\//-/;
-			$svninfo{'Revision'} = $revision;
+			$svninfo{'GitRevision'} = $revision;
 		}
 		else {
 			$svninfo{'Revision'} = '';
