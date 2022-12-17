@@ -87,6 +87,75 @@ jobs:
           #  vsversion: 2008
           #  toolset: 14.2
 
+          - ARTIFACT_SUFFIX: mingw_gcc_win32
+            BUILD_TYPE: Release
+            COMPILER: mingw
+            COMPILER_FRIENDLY: mingw_gcc_win32
+            GENERATOR: "Unix Makefiles"
+            CMAKE_OPTION_LIBS:
+            CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
+            CMAKE_OPTION_BUILD:
+            MINGW_CC: gcc
+            MINGW_CXX: g++
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2022
+            toolset: 14.2
+            runs-on: windows-2022
+            BUILD_DIR: build
+
+          - ARTIFACT_SUFFIX: mingw_gcc_x64
+            BUILD_TYPE: Release
+            COMPILER: mingw_x64
+            COMPILER_FRIENDLY: mingw_gcc_x64
+            GENERATOR: "Unix Makefiles"
+            CMAKE_OPTION_LIBS:
+            CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
+            CMAKE_OPTION_BUILD:
+            MINGW_CC: gcc
+            MINGW_CXX: g++
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2022
+            toolset: 14.2
+            runs-on: windows-2022
+            BUILD_DIR: build
+
+          - ARTIFACT_SUFFIX: mingw_clang_win32
+            BUILD_TYPE: Release
+            COMPILER: mingw
+            COMPILER_FRIENDLY: mingw_clang_win32
+            GENERATOR: "Unix Makefiles"
+            CMAKE_OPTION_LIBS:
+            CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
+            CMAKE_OPTION_BUILD:
+            MINGW_CC: clang
+            MINGW_CXX: clang++
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2022
+            toolset: 14.2
+            runs-on: windows-2022
+            BUILD_DIR: build
+
+          - ARTIFACT_SUFFIX: mingw_clang_x64
+            BUILD_TYPE: Release
+            COMPILER: mingw_x64
+            COMPILER_FRIENDLY: mingw_clang_x64
+            GENERATOR: "Unix Makefiles"
+            CMAKE_OPTION_LIBS:
+            CMAKE_OPTION_GENERATE: -DCMAKE_BUILD_TYPE=Release
+            CMAKE_OPTION_BUILD:
+            MINGW_CC: clang
+            MINGW_CXX: clang++
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            #APPVEYOR_CACHE_SKIP_RESTORE: true
+            vsversion: 2022
+            toolset: 14.2
+            runs-on: windows-2022
+            BUILD_DIR: build
+
+
     env:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
       BUILD_TYPE: ${{ matrix.BUILD_TYPE }}
@@ -215,7 +284,7 @@ jobs:
         run: ci_scripts\build_appveyor15.bat
         shell: cmd
 
-      - name: find oniguruma.h for debug
+      - name: find oniguruma.h
         run: dir /b /s /a-d oniguruma.h
         shell: cmd
 
@@ -247,7 +316,7 @@ jobs:
       - name: artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: artifacts-build${{github.run_number}}-id${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
+          name: artifacts
           path: |
             build/snapshot*.exe
           # See https://github.com/actions/upload-artifact#retention-period
