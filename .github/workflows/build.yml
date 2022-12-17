@@ -29,7 +29,7 @@ jobs:
             ARTIFACT_SUFFIX: vs2022-win32
 
           - BUILD_TYPE: Release
-            COMPILER: VS_143
+            COMPILER: VS_143_x64
             COMPILER_FRIENDLY: vs2022_x64
             GENERATOR: "Visual Studio 17 2022"
             CMAKE_OPTION_LIBS: "-DARCHITECTURE=x64"
