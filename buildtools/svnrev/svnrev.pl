@@ -156,7 +156,7 @@ sub write_info_cmake
 	} else {
 		print $FD "#set(SVNVERSION \"0000\")\n";
 	}
-	if ($revision ne '') {
+	if ($gitrevision ne '') {
 		print $FD "set(GITVERSION \"$gitrevision\")\n";
 	} else {
 		print $FD "#set(GITVERSION \"\")\n";
