@@ -272,7 +272,8 @@ elsif(-d "$source_root/.git" && $git ne "") {
 		elsif (-d "$source_root/.git") {
 			# use git svn log
 			my $revision = `\"$git\" rev-parse --short HEAD`;
-			$revision =~ s/\//-/;
+			chomp $revision;
+			$revision =~ s/\//-/g;
 			$svninfo{'GitRevision'} = $revision;
 		}
 		else {
