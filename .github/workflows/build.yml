@@ -13,7 +13,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - BUILD_TYPE: Release
+          - ARTIFACT_SUFFIX: vs2022-win32
+            BUILD_TYPE: Release
             COMPILER: VS_143
             COMPILER_FRIENDLY: vs2022
             GENERATOR: "Visual Studio 17 2022"
@@ -26,9 +27,9 @@ jobs:
             toolset: 14.3
             runs-on: windows-2022
             BUILD_DIR: build
-            ARTIFACT_SUFFIX: vs2022-win32
 
-          - BUILD_TYPE: Release
+          - ARTIFACT_SUFFIX: vs2022-x64
+            BUILD_TYPE: Release
             COMPILER: VS_143_x64
             COMPILER_FRIENDLY: vs2022_x64
             GENERATOR: "Visual Studio 17 2022"
@@ -41,9 +42,9 @@ jobs:
             toolset: 14.3
             runs-on: windows-2022
             BUILD_DIR: build
-            ARTIFACT_SUFFIX: vs2022-x64
 
-          - BUILD_TYPE: Release
+          - ARTIFACT_SUFFIX: vs2019-win32
+            BUILD_TYPE: Release
             COMPILER: VS_142
             COMPILER_FRIENDLY: vs2019
             GENERATOR: "Visual Studio 16 2019"
@@ -57,9 +58,9 @@ jobs:
             toolset: 14.2
             runs-on: windows-2019
             BUILD_DIR: build
-            ARTIFACT_SUFFIX: vs2019-win32
 
-          - BUILD_TYPE: Release
+          - ARTIFACT_SUFFIX: vs2019-x64
+            BUILD_TYPE: Release
             COMPILER: VS_142_x64
             COMPILER_FRIENDLY: vs2019_x64
             GENERATOR: "Visual Studio 16 2019"
@@ -72,9 +73,9 @@ jobs:
             toolset: 14.2
             runs-on: windows-2019
             BUILD_DIR: build
-            ARTIFACT_SUFFIX: vs2019-x64
 
-          #- BUILD_TYPE: Release
+          #- ARTIFACT_SUFFIX: vs2008-win32
+          #  BUILD_TYPE: Release
           #  COMPILER: VS_90
           #  COMPILER_FRIENDLY: vs2008
           #  GENERATOR: "Visual Studio 9 2008"
@@ -85,7 +86,6 @@ jobs:
           #  #APPVEYOR_CACHE_SKIP_RESTORE: true
           #  vsversion: 2008
           #  toolset: 14.2
-          #  ARTIFACT_SUFFIX: vs2008-win32
 
     env:
       # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
