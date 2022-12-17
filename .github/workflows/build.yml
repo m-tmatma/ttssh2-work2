@@ -215,7 +215,7 @@ jobs:
         run: ci_scripts\build_appveyor15.bat
         shell: cmd
 
-      - name: find oniguruma.h
+      - name: find oniguruma.h for debug
         run: dir /b /s /a-d oniguruma.h
         shell: cmd
 
