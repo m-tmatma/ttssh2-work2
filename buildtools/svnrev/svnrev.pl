@@ -250,6 +250,12 @@ elsif(-d "$source_root/.git" && $git ne "") {
 			$revision =~ s/^r(\d+).*$/$1/;
 			$svninfo{'Revision'} = $1;
 		}
+		elsif (-d "$source_root/.git") {
+			# use git svn log
+			my $revision = `\"$git\" rev-parse --short HEAD`;
+			$revision =~ s/\//-/;
+			$svninfo{'Revision'} = $revision;
+		}
 		else {
 			$svninfo{'Revision'} = '';
 		}
