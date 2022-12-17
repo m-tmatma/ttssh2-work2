@@ -113,9 +113,9 @@ if "%RELEASE%" == "1" (
 )
 if not exist Output mkdir Output
 if "%GITREV%"=="" (
-    set REVISION="%GITREV%"
+    set REVISION=%GITREV%
 ) else (
-    set REVISION="r%SVNVERSION%"
+    set REVISION=r%SVNVERSION%
 )
 set SNAPSHOT_PORTABLE_OUTPUT="teraterm-%TT_VERSION%-%REVISION%-%DATE%_%TIME%-%USERNAME%-snapshot"
 if "%RELEASE%" == "1" (
