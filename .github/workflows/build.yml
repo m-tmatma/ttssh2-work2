@@ -29,6 +29,21 @@ jobs:
             ARTIFACT_SUFFIX: vs2022-win32
 
           - BUILD_TYPE: Release
+            COMPILER: VS_143
+            COMPILER_FRIENDLY: vs2022_x64
+            GENERATOR: "Visual Studio 17 2022"
+            CMAKE_OPTION_LIBS: "-DARCHITECTURE=x64"
+            CMAKE_OPTION_GENERATE: "-A x64"
+            CMAKE_OPTION_BUILD: "--config Release"
+            APPVEYOR_SAVE_CACHE_ON_ERROR: true
+            VERBOSE: 1
+            vsversion: 2022
+            toolset: 14.3
+            runs-on: windows-2022
+            BUILD_DIR: build
+            ARTIFACT_SUFFIX: vs2022-x64
+
+          - BUILD_TYPE: Release
             COMPILER: VS_142
             COMPILER_FRIENDLY: vs2019
             GENERATOR: "Visual Studio 16 2019"
