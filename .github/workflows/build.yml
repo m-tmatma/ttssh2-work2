@@ -247,7 +247,7 @@ jobs:
       - name: artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: artifacts-${{github.run_number}}-${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
+          name: artifacts-build${{github.run_number}}-id${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
           path: |
             build/snapshot*.exe
           # See https://github.com/actions/upload-artifact#retention-period
