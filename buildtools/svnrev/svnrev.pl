@@ -104,7 +104,7 @@ sub write_info_header
 		print $FD "#undef SVNVERSION\n";
 	}
 	if ($gitrevision ne '') {
-		print $FD "#define GITREV $gitrevision\n";
+		print $FD "#define GITREV \"$gitrevision\"\n";
 	} else {
 		print $FD "#undef GITREV\n";
 	}
