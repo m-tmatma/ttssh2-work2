@@ -85,6 +85,7 @@ sub dump_info()
 	my %info = @_;
 
 	print "SVNREVISION $info{'Revision'}\n";
+	print "GITREV $info{'GitRevision'}\n";
 	print "RELEASE $info{'release'}\n";
 	print "BRANCH_NAME $info{'name'}\n";
 }
