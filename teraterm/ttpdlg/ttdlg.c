@@ -2466,6 +2466,10 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 #ifdef GITREV
 			_snprintf_s(tmpbuf, sizeof(tmpbuf), _TRUNCATE, " (GIT# %s)", GITREV);
 			strncat_s(buf, sizeof(buf), tmpbuf, _TRUNCATE);
+#ifdef GITHUB_ACTIONS_URL
+			_snprintf_s(tmpbuf, sizeof(tmpbuf), _TRUNCATE, " (GitHubActionsURL %s)", GITREV);
+			strncat_s(buf, sizeof(buf), tmpbuf, _TRUNCATE);
+#endif
 #elif defined(SVNVERSION)
 			_snprintf_s(tmpbuf, sizeof(tmpbuf), _TRUNCATE, " (SVN# %d)", SVNVERSION);
 			strncat_s(buf, sizeof(buf), tmpbuf, _TRUNCATE);

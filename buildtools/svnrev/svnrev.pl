@@ -86,6 +86,7 @@ sub dump_info()
 
 	print "SVNREVISION $info{'Revision'}\n";
 	print "GITREV $info{'GitRevision'}\n";
+	print "GITHUB_ACTIONS_URL $info{'GitHubActionsURL'}\n";
 	print "RELEASE $info{'release'}\n";
 	print "BRANCH_NAME $info{'name'}\n";
 }
@@ -95,6 +96,7 @@ sub write_info_header
 	my ($out_header, %svninfo) = @_;
 	my $revision = $svninfo{'Revision'};
 	my $gitrevision = $svninfo{'GitRevision'};
+	my $GitHubActionsURL = $svninfo{'GitHubActionsURL'};
 
 	open(my $FD, ">$out_header") || die "error $out_header";
 	print $FD "/* $header */\n";
@@ -103,6 +105,11 @@ sub write_info_header
 		print $FD "#define GITREV \"$gitrevision\"\n";
 	} else {
 		print $FD "#undef GITREV\n";
+	}
+	if ($GitHubActionsURL ne '') {
+		print $FD "#define GITHUB_ACTIONS_URL \"$GitHubActionsURL\"\n";
+	} else {
+		print $FD "#undef GITHUB_ACTIONS_URL\n";
 	}
 	if ($revision ne '') {
 		print $FD "#define SVNVERSION $revision\n";
@@ -123,6 +130,7 @@ sub write_info_bat
 	my ($out_header, %svninfo) = @_;
 	my $revision = $svninfo{'Revision'};
 	my $gitrevision = $svninfo{'GitRevision'};
+	my $GitHubActionsURL = $svninfo{'GitHubActionsURL'};
 
 	open(my $FD, ">$out_bat") || die "error $out_bat";
 	print $FD "\@rem $header\n";
@@ -131,6 +139,11 @@ sub write_info_bat
 		print $FD "set GITREV=$gitrevision\n";
 	} else {
 		print $FD "set GITREV=unknown\n";
+	}
+	if ($GitHubActionsURL ne '') {
+		print $FD "set GITHUB_ACTIONS_URL=$GitHubActionsURL\n";
+	} else {
+		print $FD "set GITHUB_ACTIONS_URL=\n";
 	}
 	if ($revision ne '') {
 		print $FD "set SVNVERSION=$revision\n";
@@ -148,6 +161,7 @@ sub write_info_cmake
 	my ($out_header, %svninfo) = @_;
 	my $revision = $svninfo{'Revision'};
 	my $gitrevision = $svninfo{'GitRevision'};
+	my $GitHubActionsURL = $svninfo{'GitHubActionsURL'};
 
 	open(my $FD, ">$out_cmake") || die "error $out_cmake";
 	print $FD "# $header\n";
@@ -156,6 +170,11 @@ sub write_info_cmake
 		print $FD "set(GITREV \"$gitrevision\")\n";
 	} else {
 		print $FD "#set(GITREV \"\")\n";
+	}
+	if ($GitHubActionsURL ne '') {
+		print $FD "set(GITHUB_ACTIONS_URL \"$GitHubActionsURL\")\n";
+	} else {
+		print $FD "#set(GITHUB_ACTIONS_URL \"\")\n";
 	}
 	if ($revision ne '') {
 		print $FD "set(SVNVERSION \"$revision\")\n";
@@ -273,8 +292,10 @@ elsif(-d "$source_root/.git" && $git ne "") {
 			# use git svn log
 			my $revision = `\"$git\" rev-parse --short HEAD`;
 			chomp $revision;
+			my $GITHUB_ACTIONS_URL = $ENV{GITHUB_ACTIONS_URL};
 			$revision =~ s/\//-/g;
 			$svninfo{'GitRevision'} = $revision;
+			$svninfo{'GitHubActionsURL'} = $GITHUB_ACTIONS_URL;
 		}
 		else {
 			$svninfo{'Revision'} = '';

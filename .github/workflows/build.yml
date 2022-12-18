@@ -103,6 +103,7 @@ jobs:
       MINGW_CXX: ${{ matrix.MINGW_CXX }}
       VERBOSE: ${{ matrix.VERBOSE }}
       #GITREV:  ${{ github.sha }}
+      GITHUB_ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       VERSION: 5.0
 
     runs-on: ${{ matrix.runs-on }}
