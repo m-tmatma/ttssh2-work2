@@ -127,7 +127,9 @@ jobs:
       - name: set GITREV
         run: |
           $GITREV = $Env:GITHUB_SHA.Substring(0, 10)
-          Write-Host ("GITREV=$GITREV")  6>> $Env:GITHUB_ENV
+          Write-Host "$Env:GITHUB_ENV"
+          Write-Host "GITREV=$GITREV"
+          Write-Host "GITREV=$GITREV"  6>> $Env:GITHUB_ENV
         shell: powershell
 
       # see https://github.com/appveyor/build-images/blob/d208f5ca6495d22ced83d5d39a0c612ceffc36d7/scripts/Windows/install_cygwin.ps1#L10-L16
