@@ -251,17 +251,18 @@ jobs:
         run: dir /b /s /a-d *.exe
         shell: cmd
 
-      - name: artifacts svnversion.h
+      - name: artifacts svnversion/cmake
         if: always()
         uses: actions/upload-artifact@v3
         with:
           name: artifacts-svnversion-build${{github.run_number}}-id${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
           path: |
             build/**/svnversion.h
+            build/**/build_config.cmake
           # See https://github.com/actions/upload-artifact#retention-period
           retention-days: 2
 
-      - name: artifacts
+      - name: artifacts build
         uses: actions/upload-artifact@v3
         with:
           name: artifacts-build${{github.run_number}}-id${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
