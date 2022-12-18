@@ -6,9 +6,9 @@ if defined GITREV (
 ) else (
     set REVISION=r%SVNVERSION%
 )
-set ZIP_FILE=snapshot-%VERSION%-%REVISION%-appveyor-%COMPILER_FRIENDLY%.zip
-set SETUP_FILE=snapshot-%VERSION%-%REVISION%-appveyor-%COMPILER_FRIENDLY%
-set SNAPSHOT_DIR=snapshot-%REVISION%-appveyor-%COMPILER_FRIENDLY%
+set ZIP_FILE=snapshot-%VERSION%-%REVISION%-githubactions-%COMPILER_FRIENDLY%.zip
+set SETUP_FILE=snapshot-%VERSION%-%REVISION%-githubactions-%COMPILER_FRIENDLY%
+set SNAPSHOT_DIR=snapshot-%REVISION%-githubactions-%COMPILER_FRIENDLY%
 
 mkdir %SNAPSHOT_DIR%\cygterm+-i686
 mkdir %SNAPSHOT_DIR%\cygterm+-x86_64
