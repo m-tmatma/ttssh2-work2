@@ -158,9 +158,9 @@ sub write_info_cmake
 		print $FD "#set(SVNVERSION \"0000\")\n";
 	}
 	if ($gitrevision ne '') {
-		print $FD "set(GITVERSION \"$gitrevision\")\n";
+		print $FD "set(GITREV \"$gitrevision\")\n";
 	} else {
-		print $FD "#set(GITVERSION \"\")\n";
+		print $FD "#set(GITREV \"\")\n";
 	}
 	print $FD "set(RELEASE $svninfo{'release'})\n";
 	print $FD "set(DATE \"$date\")\n";
