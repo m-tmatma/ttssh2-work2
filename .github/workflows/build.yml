@@ -102,7 +102,7 @@ jobs:
       MINGW_CC: ${{ matrix.MINGW_CC }}
       MINGW_CXX: ${{ matrix.MINGW_CXX }}
       VERBOSE: ${{ matrix.VERBOSE }}
-      GITREV:  ${{ github.sha }}
+      #GITREV:  ${{ github.sha }}
 
     runs-on: ${{ matrix.runs-on }}
     #continue-on-error: true
@@ -123,6 +123,12 @@ jobs:
       - name: curl setup-x86_64.exe
         run: curl -OL https://www.cygwin.com/setup-x86_64.exe
         shell: cmd
+
+      - name: set GITREV
+        run: |
+          $GITREV = $Env:GITHUB_SHA.Substring(0, 10)
+          Write-Host ("GITREV=$GITREV")  6>> $Env:GITHUB_ENV
+        shell: powershell
 
       # see https://github.com/appveyor/build-images/blob/d208f5ca6495d22ced83d5d39a0c612ceffc36d7/scripts/Windows/install_cygwin.ps1#L10-L16
       - name: install cygwin
