@@ -40,10 +40,10 @@
 #include "ttlib.h"
 
 /**
- *	ï¿½Rï¿½ï¿½ï¿½\ï¿½[ï¿½ï¿½ï¿½Eï¿½Bï¿½ï¿½ï¿½hï¿½Eï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½fï¿½oï¿½Oï¿½p
- *		ï¿½fï¿½oï¿½Oï¿½pï¿½É–ï¿½ï¿½ßï¿½ï¿½ï¿½printf()ï¿½nï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½é‚±ï¿½Æ‚ï¿½ï¿½Å‚ï¿½ï¿½ï¿½æ‚¤ï¿½É‚È‚ï¿½
+ *	ƒRƒ“ƒ\[ƒ‹ƒEƒBƒ“ƒhƒE‚ğ•\¦‚·‚éƒfƒoƒO—p
+ *		ƒfƒoƒO—p‚É–„‚ß‚ñ‚¾printf()Œn‚ğ•\¦‚·‚é‚±‚Æ‚ª‚Å‚«‚é‚æ‚¤‚É‚È‚é
  *
- *	@retval	ï¿½Rï¿½ï¿½ï¿½\ï¿½[ï¿½ï¿½ï¿½ï¿½Window Handle
+ *	@retval	ƒRƒ“ƒ\[ƒ‹‚ÌWindow Handle
  */
 HWND DebugConsoleOpen(void)
 {
@@ -56,7 +56,7 @@ HWND DebugConsoleOpen(void)
 	freopen_s(&fp, "CONOUT$", "w", stdout);
 	freopen_s(&fp, "CONOUT$", "w", stderr);
 
-	// ï¿½Â‚ï¿½ï¿½ï¿½{ï¿½^ï¿½ï¿½ï¿½ğ–³Œï¿½ï¿½ï¿½
+	// •Â‚¶‚éƒ{ƒ^ƒ“‚ğ–³Œø‰»
 	hWnd = pGetConsoleWindow();
 	HMENU hmenu = GetSystemMenu(hWnd, FALSE);
 	RemoveMenu(hmenu, SC_CLOSE, MF_BYCOMMAND);
@@ -65,12 +65,12 @@ HWND DebugConsoleOpen(void)
 }
 
 //
-// ï¿½ï¿½Oï¿½nï¿½ï¿½ï¿½hï¿½ï¿½ï¿½Ìƒtï¿½bï¿½Nï¿½iï¿½Xï¿½^ï¿½bï¿½Nï¿½gï¿½ï¿½ï¿½[ï¿½Xï¿½Ìƒ_ï¿½ï¿½ï¿½vï¿½j
+// —áŠOƒnƒ“ƒhƒ‰‚ÌƒtƒbƒNiƒXƒ^ƒbƒNƒgƒŒ[ƒX‚Ìƒ_ƒ“ƒvj
 //
 // cf. http://svn.collab.net/repos/svn/trunk/subversion/libsvn_subr/win32_crashrpt.c
 // (2007.9.30 yutaka)
 //
-// ï¿½ï¿½Oï¿½Rï¿½[ï¿½hï¿½ğ•¶ï¿½ï¿½ï¿½Ö•ÏŠï¿½ï¿½ï¿½ï¿½ï¿½
+// —áŠOƒR[ƒh‚ğ•¶š—ñ‚Ö•ÏŠ·‚·‚é
 #if !defined(_M_X64)
 static const char *GetExceptionString(DWORD exception)
 {
@@ -110,7 +110,7 @@ static const char *GetExceptionString(DWORD exception)
 #undef EXCEPTION
 }
 
-/* ï¿½ï¿½Oï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÉŠÖï¿½ï¿½ÌŒÄ‚Ñoï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Aï¿½ï¿½Oï¿½tï¿½Bï¿½ï¿½ï¿½^ï¿½Öï¿½ */
+/* —áŠO”­¶‚ÉŠÖ”‚ÌŒÄ‚Ño‚µ—š—ğ‚ğ•\¦‚·‚éA—áŠOƒtƒBƒ‹ƒ^ŠÖ” */
 static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 {
 	HGLOBAL gptr;
@@ -129,7 +129,7 @@ static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 		goto error;
 	}
 
-	/* ï¿½Vï¿½ï¿½ï¿½{ï¿½ï¿½ï¿½ï¿½ï¿½iï¿½[ï¿½pï¿½oï¿½bï¿½tï¿½@ï¿½Ìï¿½ï¿½ï¿½ï¿½ï¿½ */
+	/* ƒVƒ“ƒ{ƒ‹î•ñŠi”[—pƒoƒbƒtƒ@‚Ì‰Šú‰» */
 	gptr = GlobalAlloc(GMEM_FIXED, 10000);
 	if (gptr == NULL) {
 		goto error;
@@ -139,7 +139,7 @@ static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 	pSym->SizeOfStruct = 10000;
 	pSym->MaxNameLength = 10000 - sizeof(IMAGEHLP_SYMBOL);
 
-	/* ï¿½Xï¿½^ï¿½bï¿½Nï¿½tï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½Ìï¿½ï¿½ï¿½ï¿½ï¿½ */
+	/* ƒXƒ^ƒbƒNƒtƒŒ[ƒ€‚Ì‰Šú‰» */
 	ZeroMemory(&sf, sizeof(sf));
 	sf.AddrPC.Offset = ExInfo->ContextRecord->Eip;
 	sf.AddrStack.Offset = ExInfo->ContextRecord->Esp;
@@ -148,10 +148,10 @@ static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 	sf.AddrStack.Mode = AddrModeFlat;
 	sf.AddrFrame.Mode = AddrModeFlat;
 
-	/* ï¿½Vï¿½ï¿½ï¿½{ï¿½ï¿½ï¿½nï¿½ï¿½ï¿½hï¿½ï¿½ï¿½Ìï¿½ï¿½ï¿½ï¿½ï¿½ */
+	/* ƒVƒ“ƒ{ƒ‹ƒnƒ“ƒhƒ‰‚Ì‰Šú‰» */
 	SymInitialize(hProcess, NULL, TRUE);
 
-	// ï¿½ï¿½ï¿½Wï¿½Xï¿½^ï¿½_ï¿½ï¿½ï¿½v
+	// ƒŒƒWƒXƒ^ƒ_ƒ“ƒv
 	msg[0] = '\0';
 	_snprintf_s(buf, sizeof(buf), _TRUNCATE, "eax=%08X ebx=%08X ecx=%08X edx=%08X esi=%08X edi=%08X\r\n"
 		   "ebp=%08X esp=%08X eip=%08X efl=%08X\r\n"
@@ -180,10 +180,10 @@ static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 		strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
 	}
 
-	/* ï¿½Xï¿½^ï¿½bï¿½Nï¿½tï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É•\ï¿½ï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ */
+	/* ƒXƒ^ƒbƒNƒtƒŒ[ƒ€‚ğ‡‚É•\¦‚µ‚Ä‚¢‚­ */
 	frame = 0;
 	for (;;) {
-		/* ï¿½ï¿½ï¿½ÌƒXï¿½^ï¿½bï¿½Nï¿½tï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½Ìæ“¾ */
+		/* Ÿ‚ÌƒXƒ^ƒbƒNƒtƒŒ[ƒ€‚Ìæ“¾ */
 		bResult = StackWalk(
 			IMAGE_FILE_MACHINE_I386,
 			hProcess,
@@ -195,16 +195,16 @@ static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 			SymGetModuleBase,
 			NULL);
 
-		/* ï¿½ï¿½ï¿½sï¿½È‚ï¿½ÎAï¿½ï¿½ï¿½[ï¿½vï¿½ğ”²‚ï¿½ï¿½ï¿½ */
+		/* ¸”s‚È‚ç‚ÎAƒ‹[ƒv‚ğ”²‚¯‚é */
 		if (!bResult || sf.AddrFrame.Offset == 0)
 			break;
 
 		frame++;
 
-		/* ï¿½vï¿½ï¿½ï¿½Oï¿½ï¿½ï¿½ï¿½ï¿½Jï¿½Eï¿½ï¿½ï¿½^ï¿½iï¿½ï¿½ï¿½zï¿½Aï¿½hï¿½ï¿½ï¿½Xï¿½jï¿½ï¿½ï¿½ï¿½Öï¿½ï¿½ï¿½ï¿½ÆƒIï¿½tï¿½Zï¿½bï¿½gï¿½ï¿½ï¿½æ“¾ */
+		/* ƒvƒƒOƒ‰ƒ€ƒJƒEƒ“ƒ^i‰¼‘zƒAƒhƒŒƒXj‚©‚çŠÖ”–¼‚ÆƒIƒtƒZƒbƒg‚ğæ“¾ */
 		bResult = SymGetSymFromAddr(hProcess, sf.AddrPC.Offset, &Disp, pSym);
 
-		/* ï¿½æ“¾ï¿½ï¿½ï¿½Ê‚ï¿½\ï¿½ï¿½ */
+		/* æ“¾Œ‹‰Ê‚ğ•\¦ */
 		_snprintf_s(buf, sizeof(buf), _TRUNCATE, "#%d  0x%08x in ", frame, sf.AddrPC.Offset);
 		strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
 		if (bResult) {
@@ -215,7 +215,7 @@ static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 			strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
 		}
 
-		// ï¿½ï¿½ï¿½sï¿½tï¿½@ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Ìæ“¾
+		// Àsƒtƒ@ƒCƒ‹–¼‚Ìæ“¾
 		ZeroMemory( &(ih_module), sizeof(ih_module) );
 		ih_module.SizeOfStruct = sizeof(ih_module);
 		bResult = SymGetModuleInfo( hProcess, sf.AddrPC.Offset, &(ih_module) );
@@ -228,7 +228,7 @@ static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 			strncat_s(msg, sizeof(msg), buf, _TRUNCATE);
 		}
 
-		// ï¿½tï¿½@ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½Æsï¿½Ôï¿½ï¿½Ìæ“¾
+		// ƒtƒ@ƒCƒ‹–¼‚Æs”Ô†‚Ìæ“¾
 		ZeroMemory( &(ih_line), sizeof(ih_line) );
 		ih_line.SizeOfStruct = sizeof(ih_line);
 		bResult = pSymGetLineFromAddr( hProcess, sf.AddrPC.Offset, &Disp, &ih_line );
@@ -241,12 +241,12 @@ static void CALLBACK ApplicationFaultHandler(EXCEPTION_POINTERS *ExInfo)
 		strncat_s(msg, sizeof(msg), "\n", _TRUNCATE);
 	}
 
-	/* ï¿½ãˆï¿½ï¿½ */
+	/* Œãˆ— */
 	SymCleanup(hProcess);
 	GlobalUnlock(pSym);
 	GlobalFree(pSym);
 
-	// ï¿½ï¿½Oï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È‚Ì‚ÅAAPIï¿½ğ’¼ÚŒÄ‚Ñoï¿½ï¿½
+	// —áŠOˆ—’†‚È‚Ì‚ÅAAPI‚ğ’¼ÚŒÄ‚Ño‚·
 	::MessageBoxA(NULL, msg, "Tera Term: Application fault", MB_OK | MB_ICONEXCLAMATION);
 
 error:
@@ -283,7 +283,7 @@ static void DumpMiniDump(const wchar_t *filename, struct _EXCEPTION_POINTERS* pE
 	wchar_t *dumpfile = NULL;
 
 	if (pMiniDumpWriteDump == NULL) {
-		// MiniDumpWriteDump() ï¿½ï¿½ï¿½Tï¿½|ï¿½[ï¿½gï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½È‚ï¿½ï¿½BXPï¿½ï¿½ï¿½O
+		// MiniDumpWriteDump() ‚ªƒTƒ|[ƒg‚³‚ê‚Ä‚¢‚È‚¢BXP‚æ‚è‘O
 		return;
 	}
 
@@ -327,8 +327,8 @@ static LONG WINAPI ExceptionFilter(struct _EXCEPTION_POINTERS* pExceptionPointer
 	ApplicationFaultHandler(pExceptionPointers);
 #endif
 
-//	return EXCEPTION_EXECUTE_HANDLER;  /* ï¿½ï¿½ï¿½Ì‚Ü‚Üƒvï¿½ï¿½ï¿½Zï¿½Xï¿½ï¿½ï¿½Iï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ */
-	return EXCEPTION_CONTINUE_SEARCH;  /* ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½mï¿½Aï¿½vï¿½ï¿½ï¿½Pï¿½[ï¿½Vï¿½ï¿½ï¿½ï¿½ï¿½Gï¿½ï¿½ï¿½[ï¿½nï¿½|ï¿½bï¿½vï¿½Aï¿½bï¿½vï¿½ï¿½ï¿½bï¿½Zï¿½[ï¿½Wï¿½{ï¿½bï¿½Nï¿½Xï¿½ï¿½ï¿½Ä‚Ñoï¿½ï¿½ */
+//	return EXCEPTION_EXECUTE_HANDLER;  /* ‚»‚Ì‚Ü‚ÜƒvƒƒZƒX‚ğI—¹‚³‚¹‚é */
+	return EXCEPTION_CONTINUE_SEARCH;  /* ˆø‚«‘±‚«mƒAƒvƒŠƒP[ƒVƒ‡ƒ“ƒGƒ‰[nƒ|ƒbƒvƒAƒbƒvƒƒbƒZ[ƒWƒ{ƒbƒNƒX‚ğŒÄ‚Ño‚· */
 }
 
 void DebugTestCrash(void)
@@ -346,12 +346,12 @@ static void InvalidParameterHandler(const wchar_t* /*expression*/,
 }
 
 /**
- *  ï¿½ï¿½Oï¿½nï¿½ï¿½ï¿½hï¿½ï¿½ï¿½Ìƒtï¿½bï¿½N
+ *  —áŠOƒnƒ“ƒhƒ‰‚ÌƒtƒbƒN
  */
 void DebugSetException(void)
 {
 	SetUnhandledExceptionFilter(ExceptionFilter);
 
-	// Cï¿½ï¿½ï¿½ï¿½ï¿½^ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Èƒpï¿½ï¿½ï¿½ï¿½ï¿½[ï¿½^ï¿½Gï¿½ï¿½ï¿½[ï¿½nï¿½ï¿½ï¿½hï¿½ï¿½
+	// Cƒ‰ƒ“ƒ^ƒCƒ€–³Œø‚Èƒpƒ‰ƒ[ƒ^ƒGƒ‰[ƒnƒ“ƒhƒ‰
 	_set_invalid_parameter_handler(InvalidParameterHandler);
 }
