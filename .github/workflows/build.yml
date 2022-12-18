@@ -108,6 +108,7 @@ jobs:
       MINGW_CXX: ${{ matrix.MINGW_CXX }}
       VERBOSE: ${{ matrix.VERBOSE }}
       #GITREV:  ${{ github.sha }}
+      VERSION: 5.0
 
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.runs-on }}
