@@ -112,7 +112,7 @@ if "%RELEASE%" == "1" (
     call makearchive.bat
 )
 if not exist Output mkdir Output
-if "%GITREV%"!="" (
+if not defined GITREV (
     set REVISION=%GITREV%
 ) else (
     set REVISION=r%SVNVERSION%
