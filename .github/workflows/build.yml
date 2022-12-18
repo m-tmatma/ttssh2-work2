@@ -263,7 +263,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: artifacts-svnversion-build${{github.run_number}}-id${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
+          name: artifacts-svnversion-build${{github.run_number}}-id${{github.run_id}}-${{ env.GITREV }}-${{ matrix.ARTIFACT_SUFFIX }}
           path: |
             build/**/svnversion.h
             build/**/build_config.cmake
@@ -273,7 +273,7 @@ jobs:
       - name: artifacts build
         uses: actions/upload-artifact@v3
         with:
-          name: artifacts-build${{github.run_number}}-id${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
+          name: artifacts-build${{github.run_number}}-id${{github.run_id}}-${{ env.GITREV }}-${{ matrix.ARTIFACT_SUFFIX }}
           path: |
             build/snapshot*.exe
           # See https://github.com/actions/upload-artifact#retention-period
