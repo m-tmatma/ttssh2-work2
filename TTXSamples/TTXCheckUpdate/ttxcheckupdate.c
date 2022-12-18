@@ -62,11 +62,11 @@ static TInstVar InstVar;
 static TInstVar *pvar;
 
 /**
- *	ï¿½hï¿½ï¿½ï¿½bï¿½vï¿½_ï¿½Eï¿½ï¿½ï¿½Éƒoï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ê——ï¿½Ìˆê——ï¿½ï¿½ï¿½Zï¿½bï¿½gï¿½ï¿½ï¿½ï¿½
+ *	ƒhƒƒbƒvƒ_ƒEƒ“‚Éƒo[ƒWƒ‡ƒ“î•ñˆê——‚Ìˆê——‚ğƒZƒbƒg‚·‚é
  *
- *	ï¿½Åï¿½ï¿½ÉŒï¿½ï¿½Â‚ï¿½ï¿½ï¿½ï¿½ï¿½
- *	running_version ï¿½Ìƒï¿½ï¿½Wï¿½ï¿½ï¿½[ï¿½oï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½Æ“ï¿½ï¿½ï¿½
- *	ï¿½oï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Iï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ *	Å‰‚ÉŒ©‚Â‚©‚Á‚½
+ *	running_version ‚ÌƒƒWƒƒ[ƒo[ƒWƒ‡ƒ“‚Æ“¯‚¶
+ *	ƒo[ƒWƒ‡ƒ“î•ñ‚ğ‘I‘ğ‚·‚é
  */
 static int SetDropdown(HWND hDlg, int running_version)
 {
@@ -108,7 +108,7 @@ static int SetDropdown(HWND hDlg, int running_version)
 }
 
 /**
- *	version_one_t ï¿½Ìï¿½ï¿½ï¿½ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½É•\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+ *	version_one_t ‚Ìî•ñ‚ğƒ_ƒCƒAƒƒO‚É•\¦‚·‚é
  */
 static void SetTexts(HWND hDlg, const version_one_t *version)
 {
@@ -195,14 +195,14 @@ static void ShowDialog(HWND hWnd)
 		MB_YESNO | MB_ICONEXCLAMATION
 	};
 
-	/* ï¿½Xï¿½Vï¿½ï¿½ï¿½ï¿½ï¿½æ“¾ï¿½ï¿½ï¿½Ä‚ï¿½ok? */
+	/* XVî•ñ‚ğæ“¾‚µ‚Ä‚àok? */
 	GetI18nStrWW("TTXCheckUpdate", "JSON_URL", update_info_url_default, UILanguageFileW, &update_info_url);
 	result_mb = TTMessageBoxW(hWnd, &info, UILanguageFileW, update_info_url);
 	if (result_mb == IDNO) {
 		return;
 	}
 
-	/* ï¿½Xï¿½Vï¿½ï¿½ï¿½æ“¾ï¿½A'\0'ï¿½ï¿½Ç‰ï¿½ï¿½ï¿½ï¿½é¨ jsonï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ì¬ */
+	/* XVî•ñæ“¾A'\0'‚ğ’Ç‰Á‚·‚é¨ json•¶š—ñ‚ğì¬ */
 	swprintf(agent, _countof(agent), L"%s_%d", agent_base, pvar->ts->RunningVersion);
 	result_bool = GetContent(update_info_url, agent, (void**)&json_raw_ptr, &json_raw_size);
 	free(update_info_url);
@@ -219,19 +219,19 @@ static void ShowDialog(HWND hWnd)
 	json_raw_ptr = NULL;
 	json_ptr[json_size - 1] = '\0';
 
-	/* jsonï¿½ï¿½ï¿½pï¿½[ï¿½Xï¿½ï¿½ï¿½ï¿½, versionsï¿½Éï¿½ñ‚ª“ï¿½ï¿½ï¿½ */
+	/* json‚ğƒp[ƒX‚·‚é, versions‚Éî•ñ‚ª“ü‚é */
 	pvar->versions = ParseJson(json_ptr, &pvar->versions_count);
 	if (pvar->versions == NULL) {
 		MessageBoxW(hWnd, L"parse error?", L"Tera Term", MB_OK | MB_ICONEXCLAMATION);
 		return;
 	}
 
-	/* ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½ï¿½ï¿½oï¿½ï¿½ */
+	/* ƒ_ƒCƒAƒƒO‚ğo‚· */
 	SetDialogFont(pvar->ts->DialogFontNameW, pvar->ts->DialogFontPoint, pvar->ts->DialogFontCharSet,
 				  pvar->ts->UILanguageFileW, "Tera Term", "DLG_TAHOMA_FONT");
 	TTDialogBoxParam(pvar->hInst, MAKEINTRESOURCE(IDD_CHECK_UPDATE_DIALOG), hWnd, DlgProc, (LPARAM)pvar);
 
-	/* ï¿½Iï¿½ï¿½ */
+	/* I—¹ */
 	free(json_ptr);
 	ParseFree(pvar->versions, pvar->versions_count);
 	pvar->versions = NULL;
@@ -296,7 +296,7 @@ BOOL __declspec(dllexport) WINAPI TTXBind(WORD Version, TTXExports *exports)
 
 #if 0
 	if (!IsWindowsNTKernel()) {
-		// TODO Windows10ï¿½ÈŠOï¿½Aï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		// TODO Windows10ˆÈŠOA–¢ŒŸØ
 		return FALSE;
 	}
 #endif
