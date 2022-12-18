@@ -68,8 +68,8 @@
 #include "SFMT_version_for_teraterm.h"
 
 #include <winsock2.h>
-#undef EFFECT_ENABLED	// ƒGƒtƒFƒNƒg‚Ì—LŒø‰Â”Û
-#undef TEXTURE_ENABLED	// ƒeƒNƒXƒ`ƒƒ‚Ì—LŒø‰Â”Û
+#undef EFFECT_ENABLED	// ï¿½Gï¿½tï¿½Fï¿½Nï¿½gï¿½Ì—Lï¿½ï¿½ï¿½Â”ï¿½
+#undef TEXTURE_ENABLED	// ï¿½eï¿½Nï¿½Xï¿½`ï¿½ï¿½ï¿½Ì—Lï¿½ï¿½ï¿½Â”ï¿½
 
 #undef DialogBoxParam
 #define DialogBoxParam(p1,p2,p3,p4,p5) \
@@ -83,8 +83,8 @@
 
 extern HANDLE hInst;
 /*
- * ttwinman.h‚ğinclude‚·‚é‚ÆAhInst‚ÆƒVƒ“ƒ{ƒ‹Õ“Ë‚·‚é‚½‚ßA
- * cv‚ÌexternéŒ¾‚ğŒÂ•Ê‚É’Ç‰Á‚·‚éB
+ * ttwinman.hï¿½ï¿½includeï¿½ï¿½ï¿½ï¿½ÆAhInstï¿½ÆƒVï¿½ï¿½ï¿½{ï¿½ï¿½ï¿½Õ“Ë‚ï¿½ï¿½é‚½ï¿½ßA
+ * cvï¿½ï¿½externï¿½éŒ¾ï¿½ï¿½ï¿½Â•Ê‚É’Ç‰ï¿½ï¿½ï¿½ï¿½ï¿½B
  */
 extern TComVar cv;
 
@@ -140,7 +140,7 @@ static void SetKanjiCodeDropDownList(HWND HDlg, int id, int language, int sel_co
 }
 
 /*
- * COMƒ|[ƒg‚ÉŠÖ‚·‚éÚ×î•ñ
+ * COMï¿½|ï¿½[ï¿½gï¿½ÉŠÖ‚ï¿½ï¿½ï¿½Ú×ï¿½ï¿½
  */
 static ComPortInfo_t *ComPortInfoPtr;
 static int ComPortInfoCount;
@@ -187,7 +187,7 @@ static INT_PTR CALLBACK TermDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 			}
 			else if ( ts->Language==IdRussian ) {
 				// TODO
-				// 		Ÿ‚ÌƒL[‚ğg‚í‚È‚­‚È‚Á‚½,®—‚·‚é
+				// 		ï¿½ï¿½ï¿½ÌƒLï¿½[ï¿½ï¿½ï¿½gï¿½ï¿½È‚ï¿½ï¿½È‚ï¿½ï¿½ï¿½,ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 				//			"DLG_TERM_RUSSCHARSET"
 				//			"DLG_TERM_RUSSFONT"
 				static const DlgTextInfo TextInfosRu[] = {
@@ -290,7 +290,7 @@ static INT_PTR CALLBACK TermDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 						else if (width > 0) {
 							ts->TerminalWidth = width;
 						}
-						else { // 0 ˆÈ‰º‚Ìê‡‚Í•ÏX‚µ‚È‚¢
+						else { // 0 ï¿½È‰ï¿½ï¿½Ìê‡ï¿½Í•ÏXï¿½ï¿½ï¿½È‚ï¿½
 							;
 						}
 
@@ -301,7 +301,7 @@ static INT_PTR CALLBACK TermDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 						else if (height > 0) {
 							ts->TerminalHeight = height;
 						}
-						else { // 0 ˆÈ‰º‚Ìê‡‚Í•ÏX‚µ‚È‚¢
+						else { // 0 ï¿½È‰ï¿½ï¿½Ìê‡ï¿½Í•ÏXï¿½ï¿½ï¿½È‚ï¿½
 							;
 						}
 
@@ -560,7 +560,7 @@ static INT_PTR CALLBACK WinDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 
 			SetDlgTextsW(Dialog, TextInfos, _countof(TextInfos), ts->UILanguageFileW);
 			{
-				// VTWin‚ÆTEKWin‚Åƒ‰ƒxƒ‹‚ªˆÙ‚È‚Á‚Ä‚¢‚é
+				// VTWinï¿½ï¿½TEKWinï¿½Åƒï¿½ï¿½xï¿½ï¿½ï¿½ï¿½ï¿½Ù‚È‚ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½
 				static const DlgTextInfo TextInfosVT[] = {
 					{ IDC_WINCOLOREMU, "DLG_WIN_PCBOLD16" },
 				};
@@ -1003,14 +1003,14 @@ static const char *DataList[] = {"7 bit","8 bit",NULL};
 static const char *ParityList[] = {"none", "odd", "even", "mark", "space", NULL};
 static const char *StopList[] = {"1 bit", "2 bit", NULL};
 static const char *FlowList[] = {"Xon/Xoff", "RTS/CTS", "DSR/DTR", "none", NULL};
-static int g_deltaSumSerialDlg = 0;        // ƒ}ƒEƒXƒzƒC[ƒ‹‚ÌDelta—İÏ—p
-static WNDPROC g_defSerialDlgEditWndProc;  // Edit Control‚ÌƒTƒuƒNƒ‰ƒX‰»—p
-static WNDPROC g_defSerialDlgSpeedComboboxWndProc;  // Combo-box Control‚ÌƒTƒuƒNƒ‰ƒX‰»—p
+static int g_deltaSumSerialDlg = 0;        // ï¿½}ï¿½Eï¿½Xï¿½zï¿½Cï¿½[ï¿½ï¿½ï¿½ï¿½Deltaï¿½İÏ—p
+static WNDPROC g_defSerialDlgEditWndProc;  // Edit Controlï¿½ÌƒTï¿½uï¿½Nï¿½ï¿½ï¿½Xï¿½ï¿½ï¿½p
+static WNDPROC g_defSerialDlgSpeedComboboxWndProc;  // Combo-box Controlï¿½ÌƒTï¿½uï¿½Nï¿½ï¿½ï¿½Xï¿½ï¿½ï¿½p
 static TipWin *g_SerialDlgSpeedTip;
 
 /*
- * ƒVƒŠƒAƒ‹ƒ|[ƒgİ’èƒ_ƒCƒAƒƒO‚ÌOKƒ{ƒ^ƒ“‚ğÚ‘±æ‚É‰‚¶‚Ä–¼Ì‚ğØ‚è‘Ö‚¦‚éB
- * ğŒ”»’è‚Í OnSetupSerialPort() ‚Æ‡‚í‚¹‚é•K—v‚ª‚ ‚éB
+ * ï¿½Vï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½İ’ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½ï¿½OKï¿½{ï¿½^ï¿½ï¿½ï¿½ï¿½Ú‘ï¿½ï¿½ï¿½É‰ï¿½ï¿½ï¿½ï¿½Ä–ï¿½ï¿½Ì‚ï¿½Ø‚ï¿½Ö‚ï¿½ï¿½ï¿½B
+ * ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ OnSetupSerialPort() ï¿½Æï¿½ï¿½í‚¹ï¿½ï¿½Kï¿½vï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
  */
 static void serial_dlg_change_OK_button(HWND dlg, int portno, const wchar_t *UILanguageFileW)
 {
@@ -1049,8 +1049,8 @@ static void serial_dlg_change_OK_button(HWND dlg, int portno, const wchar_t *UIL
 		}
 	}
 
-	/* Default.lng ‚Ìê‡AŒ¾Œêƒtƒ@ƒCƒ‹‚©‚ç“Ç‚İo‚¹‚È‚¢‚Ì‚ÅA
-	 * ƒfƒtƒHƒ‹ƒgƒeƒLƒXƒg‚ğƒZƒbƒg‚·‚éB
+	/* Default.lng ï¿½Ìê‡ï¿½Aï¿½ï¿½ï¿½ï¿½tï¿½@ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ç‚İoï¿½ï¿½ï¿½È‚ï¿½ï¿½Ì‚ÅA
+	 * ï¿½fï¿½tï¿½Hï¿½ï¿½ï¿½gï¿½eï¿½Lï¿½Xï¿½gï¿½ï¿½ï¿½Zï¿½bï¿½gï¿½ï¿½ï¿½ï¿½B
 	 */
 	if (ret <= 0) {
 		SetDlgItemTextA(dlg, IDOK, ok_text);
@@ -1058,7 +1058,7 @@ static void serial_dlg_change_OK_button(HWND dlg, int portno, const wchar_t *UIL
 }
 
 /*
- * ƒVƒŠƒAƒ‹ƒ|[ƒgİ’èƒ_ƒCƒAƒƒO‚ÌƒeƒLƒXƒgƒ{ƒbƒNƒX‚ÉCOMƒ|[ƒg‚ÌÚ×î•ñ‚ğ•\¦‚·‚éB
+ * ï¿½Vï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½İ’ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½Ìƒeï¿½Lï¿½Xï¿½gï¿½{ï¿½bï¿½Nï¿½Xï¿½ï¿½COMï¿½|ï¿½[ï¿½gï¿½ÌÚ×ï¿½ï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
  *
  */
 static void serial_dlg_set_comport_info(HWND dlg, int portno, char *desc)
@@ -1073,12 +1073,12 @@ static void serial_dlg_set_comport_info(HWND dlg, int portno, char *desc)
 		}
 	}
 
-	// ŠY“–‚·‚éCOMƒ|[ƒg‚ªŒ©‚Â‚©‚ç‚È‚©‚Á‚½
+	// ï¿½Yï¿½ï¿½ï¿½ï¿½ï¿½ï¿½COMï¿½|ï¿½[ï¿½gï¿½ï¿½ï¿½ï¿½ï¿½Â‚ï¿½ï¿½ï¿½È‚ï¿½ï¿½ï¿½ï¿½ï¿½
 	SetDlgItemTextW(dlg, IDC_SERIALTEXT, NULL);
 }
 
 /*
- * ƒVƒŠƒAƒ‹ƒ|[ƒgİ’èƒ_ƒCƒAƒƒO‚ÌƒeƒLƒXƒgƒ{ƒbƒNƒX‚ÌƒvƒƒV[ƒWƒƒ
+ * ï¿½Vï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½İ’ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½Ìƒeï¿½Lï¿½Xï¿½gï¿½{ï¿½bï¿½Nï¿½Xï¿½Ìƒvï¿½ï¿½ï¿½Vï¿½[ï¿½Wï¿½ï¿½
  */
 static LRESULT CALLBACK SerialDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -1088,7 +1088,7 @@ static LRESULT CALLBACK SerialDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, 
 
 	switch (msg) {
 		case WM_KEYDOWN:
-			// Edit controlã‚Å CTRL+A ‚ğ‰Ÿ‰º‚·‚é‚ÆAƒeƒLƒXƒg‚ğ‘S‘I‘ğ‚·‚éB
+			// Edit controlï¿½ï¿½ï¿½ CTRL+A ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÆAï¿½eï¿½Lï¿½Xï¿½gï¿½ï¿½Sï¿½Iï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
 			if (wp == 'A' && GetKeyState(VK_CONTROL) < 0) {
 				PostMessage(hWnd, EM_SETSEL, 0, -1);
 				return 0;
@@ -1096,7 +1096,7 @@ static LRESULT CALLBACK SerialDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, 
 			break;
 
 		case WM_MOUSEWHEEL:
-			// CTRLorSHIFT + ƒ}ƒEƒXƒzƒC[ƒ‹‚Ìê‡A‰¡ƒXƒNƒ[ƒ‹‚³‚¹‚éB
+			// CTRLorSHIFT + ï¿½}ï¿½Eï¿½Xï¿½zï¿½Cï¿½[ï¿½ï¿½ï¿½Ìê‡ï¿½Aï¿½ï¿½ï¿½Xï¿½Nï¿½ï¿½ï¿½[ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
 			keys = GET_KEYSTATE_WPARAM(wp);
 			delta = GET_WHEEL_DELTA_WPARAM(wp);
 			page = keys & (MK_CONTROL | MK_SHIFT);
@@ -1120,7 +1120,7 @@ static LRESULT CALLBACK SerialDlgEditWindowProc(HWND hWnd, UINT msg, WPARAM wp, 
 }
 
 /*
- * ƒVƒŠƒAƒ‹ƒ|[ƒgİ’èƒ_ƒCƒAƒƒO‚ÌSPEED(BAUD)‚ÌƒvƒƒV[ƒWƒƒ
+ * ï¿½Vï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½İ’ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½ï¿½SPEED(BAUD)ï¿½Ìƒvï¿½ï¿½ï¿½Vï¿½[ï¿½Wï¿½ï¿½
  */
 static LRESULT CALLBACK SerialDlgSpeedComboboxWindowProc(HWND hWnd, UINT msg, WPARAM wp, LPARAM lp)
 {
@@ -1137,18 +1137,18 @@ static LRESULT CALLBACK SerialDlgSpeedComboboxWindowProc(HWND hWnd, UINT msg, WP
 			ts = (PTTSet)GetWindowLongPtr(GetParent(hWnd) ,DWLP_USER);
 			get_lang_msgW("DLG_SERIAL_SPEED_TOOLTIP", uimsg, _countof(uimsg), L"You can directly specify a number", ts->UILanguageFile);
 
-			// Combo-box‚Ì¶ãÀ•W‚ğ‹‚ß‚é
+			// Combo-boxï¿½Ìï¿½ï¿½ï¿½ï¿½ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ß‚ï¿½
 			GetWindowRect(hWnd, &wr);
 			pt.x = wr.left;
 			pt.y = wr.top;
 
-			// •¶š—ñ‚Ìc‰¡ƒTƒCƒY‚ğæ“¾‚·‚é
+			// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ìcï¿½ï¿½ï¿½Tï¿½Cï¿½Yï¿½ï¿½ï¿½æ“¾ï¿½ï¿½ï¿½ï¿½
 			TipWinGetTextWidthHeightW(hWnd, uimsg, &w, &h);
 
 			cx = pt.x;
 			cy = pt.y - (h + TIP_WIN_FRAME_WIDTH * 6);
 
-			// ƒc[ƒ‹ƒ`ƒbƒv‚ğ•\¦‚·‚é
+			// ï¿½cï¿½[ï¿½ï¿½ï¿½`ï¿½bï¿½vï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 			if (g_SerialDlgSpeedTip == NULL) {
 				g_SerialDlgSpeedTip = TipWinCreate(hInst, hWnd);
 				TipWinSetHideTimer(g_SerialDlgSpeedTip, tooltip_timeout);
@@ -1166,7 +1166,7 @@ static LRESULT CALLBACK SerialDlgSpeedComboboxWindowProc(HWND hWnd, UINT msg, WP
 }
 
 /*
- * ƒVƒŠƒAƒ‹ƒ|[ƒgİ’èƒ_ƒCƒAƒƒO
+ * ï¿½Vï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½İ’ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½O
  *
  *
  */
@@ -1190,9 +1190,9 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 	PTTSet ts = (PTTSet)GetWindowLongPtr(Dialog, DWLP_USER);
 	int i, w, sel;
 	char Temp[128];
-	static WORD ComPortTable[MAXCOMPORT];  // g—p‰Â”\‚ÈCOMƒ|[ƒg”Ô†
-	static char *ComPortDesc[MAXCOMPORT];  // COMƒ|[ƒg‚ÌÚ×î•ñ
-	static int comports; // ƒe[ƒuƒ‹Å‘å”
+	static WORD ComPortTable[MAXCOMPORT];  // ï¿½gï¿½pï¿½Â”\ï¿½ï¿½COMï¿½|ï¿½[ï¿½gï¿½Ôï¿½
+	static char *ComPortDesc[MAXCOMPORT];  // COMï¿½|ï¿½[ï¿½gï¿½ÌÚ×ï¿½ï¿½
+	static int comports; // ï¿½eï¿½[ï¿½uï¿½ï¿½ï¿½Å‘å”
 	WORD Flow;
 	int portno;
 
@@ -1207,22 +1207,22 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 			EnableDlgItem(Dialog, IDC_SERIALPORT_LABEL, IDC_SERIALPORT_LABEL);
 			EnableDlgItem(Dialog, IDOK, IDOK);
 
-			// COMƒ|[ƒg‚ÌÚ×î•ñ‚ğæ“¾‚·‚éB
-			// COM‚ÌÚ‘±ó‹µ‚Í“s“x•Ï‚í‚é‚½‚ßAƒ_ƒCƒAƒƒO‚ğ•\¦‚·‚é“x‚Éæ“¾‚·‚éB
-			// •s—v‚É‚È‚Á‚½‚çAComPortInfoFree()‚Åƒƒ‚ƒŠ‚ğ‰ğ•ú‚·‚é‚±‚ÆB
+			// COMï¿½|ï¿½[ï¿½gï¿½ÌÚ×ï¿½ï¿½ï¿½ï¿½æ“¾ï¿½ï¿½ï¿½ï¿½B
+			// COMï¿½ÌÚ‘ï¿½ï¿½ó‹µ‚Í“sï¿½xï¿½Ï‚ï¿½é‚½ï¿½ßAï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½xï¿½Éæ“¾ï¿½ï¿½ï¿½ï¿½B
+			// ï¿½sï¿½vï¿½É‚È‚ï¿½ï¿½ï¿½ï¿½ï¿½AComPortInfoFree()ï¿½Åƒï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½é‚±ï¿½ÆB
 			ComPortInfoPtr = ComPortInfoGet(&ComPortInfoCount, ts->UILanguageFile);
 
 			w = 0;
 
 			if ((comports = DetectComPorts(ComPortTable, ts->MaxComPort, ComPortDesc)) > 0) {
 				for (i=0; i<comports; i++) {
-					// MaxComPort ‚ğ‰z‚¦‚éƒ|[ƒg‚Í•\¦‚µ‚È‚¢
+					// MaxComPort ï¿½ï¿½ï¿½zï¿½ï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½Í•\ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½
 					if (ComPortTable[i] > ts->MaxComPort) {
 						continue;
 					}
 
 					_snprintf_s(Temp, sizeof(Temp), _TRUNCATE, "COM%d", ComPortTable[i]);
-// Serial dialog‚Íƒhƒƒbƒvƒ_ƒEƒ“ƒŠƒXƒg‚Ì•‚ª‘å‚«‚­‚Å‚«‚È‚¢‚Ì‚ÅADescription‚Í‚È‚µ‚Æ‚·‚éB
+// Serial dialogï¿½Íƒhï¿½ï¿½ï¿½bï¿½vï¿½_ï¿½Eï¿½ï¿½ï¿½ï¿½ï¿½Xï¿½gï¿½Ì•ï¿½ï¿½ï¿½ï¿½å‚«ï¿½ï¿½ï¿½Å‚ï¿½ï¿½È‚ï¿½ï¿½Ì‚ÅADescriptionï¿½Í‚È‚ï¿½ï¿½Æ‚ï¿½ï¿½ï¿½B
 #if 0
 					strncat_s(Temp, sizeof(Temp), ": ", _TRUNCATE);
 					strncat_s(Temp, sizeof(Temp), ComPortDesc[i], _TRUNCATE);
@@ -1233,14 +1233,14 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 						w = i;
 					}
 
-					// Ú×î•ñ‚ğ•\¦‚·‚é
+					// ï¿½Ú×ï¿½ï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 					serial_dlg_set_comport_info(Dialog, ComPortTable[w], ComPortDesc[w]);
 
 				}
 			} else if (comports == 0) {
 				DisableDlgItem(Dialog, IDC_SERIALPORT, IDC_SERIALPORT);
 				DisableDlgItem(Dialog, IDC_SERIALPORT_LABEL, IDC_SERIALPORT_LABEL);
-				// COMƒ|[ƒg‚ª‘¶İ‚µ‚È‚¢ê‡‚ÍOKƒ{ƒ^ƒ“‚ğ‰Ÿ‚¹‚È‚¢‚æ‚¤‚É‚·‚éB
+				// COMï¿½|ï¿½[ï¿½gï¿½ï¿½ï¿½ï¿½ï¿½İ‚ï¿½ï¿½È‚ï¿½ï¿½ê‡ï¿½ï¿½OKï¿½{ï¿½^ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½æ‚¤ï¿½É‚ï¿½ï¿½ï¿½B
 				DisableDlgItem(Dialog, IDOK, IDOK);
 			} else {
 				for (i=1; i<=ts->MaxComPort; i++) {
@@ -1297,27 +1297,27 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 
 			CenterWindow(Dialog, GetParent(Dialog));
 
-			// Edit control‚ğƒTƒuƒNƒ‰ƒX‰»‚·‚éB
+			// Edit controlï¿½ï¿½ï¿½Tï¿½uï¿½Nï¿½ï¿½ï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
 			g_deltaSumSerialDlg = 0;
 			g_defSerialDlgEditWndProc = (WNDPROC)SetWindowLongPtr(
 				GetDlgItem(Dialog, IDC_SERIALTEXT),
 				GWLP_WNDPROC,
 				(LONG_PTR)SerialDlgEditWindowProc);
 
-			// Combo-box control‚ğƒTƒuƒNƒ‰ƒX‰»‚·‚éB
+			// Combo-box controlï¿½ï¿½ï¿½Tï¿½uï¿½Nï¿½ï¿½ï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
 			g_defSerialDlgSpeedComboboxWndProc = (WNDPROC)SetWindowLongPtr(
 				GetDlgItem(Dialog, IDC_SERIALBAUD),
 				GWLP_WNDPROC,
 				(LONG_PTR)SerialDlgSpeedComboboxWindowProc);
 
-			// Œ»İ‚ÌÚ‘±ó‘Ô‚ÆV‚µ‚¢ƒ|[ƒg”Ô†‚Ì‘g‚İ‡‚í‚¹‚ÅAÚ‘±ˆ—‚ª•Ï‚í‚é‚½‚ßA
-			// ‚»‚ê‚É‰‚¶‚ÄOKƒ{ƒ^ƒ“‚Ìƒ‰ƒxƒ‹–¼‚ğØ‚è‘Ö‚¦‚éB
+			// ï¿½ï¿½ï¿½İ‚ÌÚ‘ï¿½ï¿½ï¿½Ô‚ÆVï¿½ï¿½ï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½Ôï¿½ï¿½Ì‘gï¿½İï¿½ï¿½í‚¹ï¿½ÅAï¿½Ú‘ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï‚ï¿½é‚½ï¿½ßA
+			// ï¿½ï¿½ï¿½ï¿½É‰ï¿½ï¿½ï¿½ï¿½ï¿½OKï¿½{ï¿½^ï¿½ï¿½ï¿½Ìƒï¿½ï¿½xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø‚ï¿½Ö‚ï¿½ï¿½ï¿½B
 			serial_dlg_change_OK_button(Dialog, ComPortTable[w], ts->UILanguageFileW);
 
 			return TRUE;
 
 		case WM_DESTROY:
-			// COMƒ|[ƒg‚ÌÚ×î•ñ‚ğ‰ğ•ú‚·‚éB
+			// COMï¿½|ï¿½[ï¿½gï¿½ÌÚ×ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
 			ComPortInfoFree(ComPortInfoPtr, ComPortInfoCount);
 			ComPortInfoPtr = NULL;
 			ComPortInfoCount = 0;
@@ -1370,12 +1370,12 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 
 						ts->PortType = IdSerial;
 
-						// ƒ{[ƒŒ[ƒg‚ª•ÏX‚³‚ê‚é‚±‚Æ‚ª‚ ‚é‚Ì‚ÅAƒ^ƒCƒgƒ‹Ä•\¦‚Ì
-						// ƒƒbƒZ[ƒW‚ğ”ò‚Î‚·‚æ‚¤‚É‚µ‚½B (2007.7.21 maya)
+						// ï¿½{ï¿½[ï¿½ï¿½ï¿½[ï¿½gï¿½ï¿½ï¿½ÏXï¿½ï¿½ï¿½ï¿½é‚±ï¿½Æ‚ï¿½ï¿½ï¿½ï¿½ï¿½Ì‚ÅAï¿½^ï¿½Cï¿½gï¿½ï¿½ï¿½Ä•\ï¿½ï¿½ï¿½ï¿½
+						// ï¿½ï¿½ï¿½bï¿½Zï¿½[ï¿½Wï¿½ï¿½ï¿½Î‚ï¿½ï¿½æ‚¤ï¿½É‚ï¿½ï¿½ï¿½ï¿½B (2007.7.21 maya)
 						PostMessage(GetParent(Dialog),WM_USER_CHANGETITLE,0,0);
 					}
 
-					// ƒc[ƒ‹ƒ`ƒbƒv‚ğ”pŠü‚·‚é
+					// ï¿½cï¿½[ï¿½ï¿½ï¿½`ï¿½bï¿½vï¿½ï¿½pï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 					if (g_SerialDlgSpeedTip) {
 						TipWinDestroy(g_SerialDlgSpeedTip);
 						g_SerialDlgSpeedTip = NULL;
@@ -1385,7 +1385,7 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 					return TRUE;
 
 				case IDCANCEL:
-					// ƒc[ƒ‹ƒ`ƒbƒv‚ğ”pŠü‚·‚é
+					// ï¿½cï¿½[ï¿½ï¿½ï¿½`ï¿½bï¿½vï¿½ï¿½pï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 					if (g_SerialDlgSpeedTip) {
 						TipWinDestroy(g_SerialDlgSpeedTip);
 						g_SerialDlgSpeedTip = NULL;
@@ -1400,15 +1400,15 @@ static INT_PTR CALLBACK SerialDlg(HWND Dialog, UINT Message, WPARAM wParam, LPAR
 
 				case IDC_SERIALPORT:
 					switch (HIWORD(wParam)) {
-					case CBN_SELCHANGE: // ƒŠƒXƒg‚©‚çCOMƒ|[ƒg‚ª‘I‘ğ‚³‚ê‚½
+					case CBN_SELCHANGE: // ï¿½ï¿½ï¿½Xï¿½gï¿½ï¿½ï¿½ï¿½COMï¿½|ï¿½[ï¿½gï¿½ï¿½ï¿½Iï¿½ï¿½ï¿½ï¿½ï¿½ê‚½
 						sel = SendDlgItemMessage(Dialog, IDC_SERIALPORT, CB_GETCURSEL, 0, 0);
-						portno = ComPortTable[sel];  // V‚µ‚¢ƒ|[ƒg”Ô†
+						portno = ComPortTable[sel];  // ï¿½Vï¿½ï¿½ï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½Ôï¿½
 
-						// Ú×î•ñ‚ğ•\¦‚·‚é
+						// ï¿½Ú×ï¿½ï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 						serial_dlg_set_comport_info(Dialog, ComPortTable[sel], ComPortDesc[sel]);
 
-						// Œ»İ‚ÌÚ‘±ó‘Ô‚ÆV‚µ‚¢ƒ|[ƒg”Ô†‚Ì‘g‚İ‡‚í‚¹‚ÅAÚ‘±ˆ—‚ª•Ï‚í‚é‚½‚ßA
-						// ‚»‚ê‚É‰‚¶‚ÄOKƒ{ƒ^ƒ“‚Ìƒ‰ƒxƒ‹–¼‚ğØ‚è‘Ö‚¦‚éB
+						// ï¿½ï¿½ï¿½İ‚ÌÚ‘ï¿½ï¿½ï¿½Ô‚ÆVï¿½ï¿½ï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½Ôï¿½ï¿½Ì‘gï¿½İï¿½ï¿½í‚¹ï¿½ÅAï¿½Ú‘ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï‚ï¿½é‚½ï¿½ßA
+						// ï¿½ï¿½ï¿½ï¿½É‰ï¿½ï¿½ï¿½ï¿½ï¿½OKï¿½{ï¿½^ï¿½ï¿½ï¿½Ìƒï¿½ï¿½xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø‚ï¿½Ö‚ï¿½ï¿½ï¿½B
 						serial_dlg_change_OK_button(Dialog, portno, ts->UILanguageFileW);
 
 						break;
@@ -1481,7 +1481,7 @@ static INT_PTR CALLBACK TCPIPDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 			SetDlgItemText(Dialog, IDC_TCPIPTERMTYPE, ts->TermType);
 			SendDlgItemMessage(Dialog, IDC_TCPIPTERMTYPE, EM_LIMITTEXT, sizeof(ts->TermType)-1, 0);
 
-			// SSHÚ‘±‚Ì‚Æ‚«‚É‚à TERM ‚ğ‘—‚é‚Ì‚ÅAtelnet‚ª–³Œø‚Å‚à disabled ‚É‚µ‚È‚¢B(2005.11.3 yutaka)
+			// SSHï¿½Ú‘ï¿½ï¿½Ì‚Æ‚ï¿½ï¿½É‚ï¿½ TERM ï¿½ğ‘—‚ï¿½Ì‚ÅAtelnetï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å‚ï¿½ disabled ï¿½É‚ï¿½ï¿½È‚ï¿½ï¿½B(2005.11.3 yutaka)
 			EnableDlgItem(Dialog,IDC_TCPIPTERMTYPELABEL,IDC_TCPIPTERMTYPE);
 
 			CenterWindow(Dialog, GetParent(Dialog));
@@ -1646,7 +1646,7 @@ static INT_PTR CALLBACK TCPIPDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 						}
 					}
 					else {
-						// SSHÚ‘±‚Ì‚Æ‚«‚É‚à TERM ‚ğ‘—‚é‚Ì‚ÅAtelnet‚ª–³Œø‚Å‚à disabled ‚É‚µ‚È‚¢B(2005.11.3 yutaka)
+						// SSHï¿½Ú‘ï¿½ï¿½Ì‚Æ‚ï¿½ï¿½É‚ï¿½ TERM ï¿½ğ‘—‚ï¿½Ì‚ÅAtelnetï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å‚ï¿½ disabled ï¿½É‚ï¿½ï¿½È‚ï¿½ï¿½B(2005.11.3 yutaka)
 						EnableDlgItem(Dialog,IDC_TCPIPTERMTYPELABEL,IDC_TCPIPTERMTYPE);
 					}
 					break;
@@ -1694,7 +1694,7 @@ static INT_PTR CALLBACK HostDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 
 			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
 
-			// ƒtƒ@ƒCƒ‹‚¨‚æ‚Ñ–¼‘O•t‚«ƒpƒCƒv‚Ìê‡ATCP/IPˆµ‚¢‚Æ‚·‚éB
+			// ï¿½tï¿½@ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ–ï¿½ï¿½Oï¿½tï¿½ï¿½ï¿½pï¿½Cï¿½vï¿½Ìê‡ï¿½ATCP/IPï¿½ï¿½ï¿½ï¿½ï¿½Æ‚ï¿½ï¿½ï¿½B
 			if ( GetHNRec->PortType==IdFile ||
 				 GetHNRec->PortType==IdNamedPipe
 				) {
@@ -1728,13 +1728,13 @@ static INT_PTR CALLBACK HostDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM
 				wchar_t *EntNameW;
 				int index;
 
-				// MaxComPort ‚ğ‰z‚¦‚éƒ|[ƒg‚Í•\¦‚µ‚È‚¢
+				// MaxComPort ï¿½ï¿½ï¿½zï¿½ï¿½ï¿½ï¿½|ï¿½[ï¿½gï¿½Í•\ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½
 				if (GetHNRec->MaxComPort >= 0 && i > GetHNRec->MaxComPort) {
 					continue;
 				}
 				j++;
 
-				// g—p’†‚Ìƒ|[ƒg‚Í•\¦‚µ‚È‚¢
+				// ï¿½gï¿½pï¿½ï¿½ï¿½Ìƒ|ï¿½[ï¿½gï¿½Í•\ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½
 				if (CheckCOMFlag(p->port_no) == 1) {
 					continue;
 				}
@@ -2039,7 +2039,7 @@ static INT_PTR CALLBACK DirDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 
 
 //
-// static text‚É‘‚©‚ê‚½URL‚ğƒ_ƒuƒ‹ƒNƒŠƒbƒN‚·‚é‚ÆAƒuƒ‰ƒEƒU‚ª‹N“®‚·‚é‚æ‚¤‚É‚·‚éB
+// static textï¿½Éï¿½ï¿½ï¿½ï¿½ê‚½URLï¿½ï¿½ï¿½_ï¿½uï¿½ï¿½ï¿½Nï¿½ï¿½ï¿½bï¿½Nï¿½ï¿½ï¿½ï¿½ÆAï¿½uï¿½ï¿½ï¿½Eï¿½Uï¿½ï¿½ï¿½Nï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ‚¤ï¿½É‚ï¿½ï¿½ï¿½B
 // based on sakura editor 1.5.2.1 # CDlgAbout.cpp
 // (2005.4.7 yutaka)
 //
@@ -2054,7 +2054,7 @@ typedef struct {
 
 static url_subclass_t author_url_class, forum_url_class;
 
-// static text‚ÉŠ„‚è“–‚Ä‚éƒvƒƒV[ƒWƒƒ
+// static textï¿½ÉŠï¿½ï¿½è“–ï¿½Ä‚ï¿½vï¿½ï¿½ï¿½Vï¿½[ï¿½Wï¿½ï¿½
 static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam )
 {
 	url_subclass_t *parent = (url_subclass_t *)GetWindowLongPtr( hWnd, GWLP_USERDATA );
@@ -2066,7 +2066,7 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 #if 0
 	case WM_SETCURSOR:
 		{
-			// ƒJ[ƒ\ƒ‹Œ`ó•ÏX
+			// ï¿½Jï¿½[ï¿½\ï¿½ï¿½ï¿½`ï¿½ï¿½ÏX
 			HCURSOR hc;
 
 			hc = (HCURSOR)LoadImage(NULL,
@@ -2082,7 +2082,7 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		}
 #endif
 
-	// ƒVƒ“ƒOƒ‹ƒNƒŠƒbƒN‚Åƒuƒ‰ƒEƒU‚ª‹N“®‚·‚é‚æ‚¤‚É•ÏX‚·‚éB(2015.11.16 yutaka)
+	// ï¿½Vï¿½ï¿½ï¿½Oï¿½ï¿½ï¿½Nï¿½ï¿½ï¿½bï¿½Nï¿½Åƒuï¿½ï¿½ï¿½Eï¿½Uï¿½ï¿½ï¿½Nï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ‚¤ï¿½É•ÏXï¿½ï¿½ï¿½ï¿½B(2015.11.16 yutaka)
 	//case WM_LBUTTONDBLCLK:
 	case WM_LBUTTONDOWN:
 	{
@@ -2116,7 +2116,7 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		break;
 
 	case WM_TIMER:
-		// URL‚Ìã‚Éƒ}ƒEƒXƒJ[ƒ\ƒ‹‚ª‚ ‚é‚È‚çAƒVƒXƒeƒ€ƒJ[ƒ\ƒ‹‚ğ•ÏX‚·‚éB
+		// URLï¿½Ìï¿½Éƒ}ï¿½Eï¿½Xï¿½Jï¿½[ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½Aï¿½Vï¿½Xï¿½eï¿½ï¿½ï¿½Jï¿½[ï¿½\ï¿½ï¿½ï¿½ï¿½ÏXï¿½ï¿½ï¿½ï¿½B
 		if (author_url_class.mouseover || forum_url_class.mouseover) {
 			HCURSOR hc;
 			//SetCapture(hWnd);
@@ -2125,17 +2125,17 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 			                        IMAGE_CURSOR, 0, 0,
 			                        LR_DEFAULTSIZE | LR_SHARED);
 
-			SetSystemCursor(CopyCursor(hc), 32512 /* OCR_NORMAL */);    // –îˆó
-			SetSystemCursor(CopyCursor(hc), 32513 /* OCR_IBEAM */);     // Iƒr[ƒ€
+			SetSystemCursor(CopyCursor(hc), 32512 /* OCR_NORMAL */);    // ï¿½ï¿½ï¿½
+			SetSystemCursor(CopyCursor(hc), 32513 /* OCR_IBEAM */);     // Iï¿½rï¿½[ï¿½ï¿½
 
 		} else {
 			//ReleaseCapture();
-			// ƒ}ƒEƒXƒJ[ƒ\ƒ‹‚ğŒ³‚É–ß‚·B
+			// ï¿½}ï¿½Eï¿½Xï¿½Jï¿½[ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É–ß‚ï¿½ï¿½B
 			SystemParametersInfo(SPI_SETCURSORS, 0, NULL, 0);
 
 		}
 
-		// ƒJ[ƒ\ƒ‹‚ªƒEƒBƒ“ƒhƒEŠO‚É‚ ‚éê‡‚É‚à WM_MOUSEMOVE ‚ğ‘—‚é
+		// ï¿½Jï¿½[ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½Eï¿½Bï¿½ï¿½ï¿½hï¿½Eï¿½Oï¿½É‚ï¿½ï¿½ï¿½ê‡ï¿½É‚ï¿½ WM_MOUSEMOVE ï¿½ğ‘—‚ï¿½
 		GetCursorPos( &pt );
 		ScreenToClient( hWnd, &pt );
 		GetClientRect( hWnd, &rc );
@@ -2146,7 +2146,7 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 
 	case WM_PAINT:
 		{
-		// ƒEƒBƒ“ƒhƒE‚Ì•`‰æ
+		// ï¿½Eï¿½Bï¿½ï¿½ï¿½hï¿½Eï¿½Ì•`ï¿½ï¿½
 		PAINTSTRUCT ps;
 		HFONT hFont;
 		HFONT hOldFont;
@@ -2154,19 +2154,19 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 
 		hdc = BeginPaint( hWnd, &ps );
 
-		// Œ»İ‚ÌƒNƒ‰ƒCƒAƒ“ƒg‹éŒ`AƒeƒLƒXƒgAƒtƒHƒ“ƒg‚ğæ“¾‚·‚é
+		// ï¿½ï¿½ï¿½İ‚ÌƒNï¿½ï¿½ï¿½Cï¿½Aï¿½ï¿½ï¿½gï¿½ï¿½`ï¿½Aï¿½eï¿½Lï¿½Xï¿½gï¿½Aï¿½tï¿½Hï¿½ï¿½ï¿½gï¿½ï¿½ï¿½æ“¾ï¿½ï¿½ï¿½ï¿½
 		GetClientRect( hWnd, &rc );
 		GetWindowText( hWnd, szText, 512 );
 		hFont = (HFONT)SendMessage( hWnd, WM_GETFONT, (WPARAM)0, (LPARAM)0 );
 
-		// ƒeƒLƒXƒg•`‰æ
+		// ï¿½eï¿½Lï¿½Xï¿½gï¿½`ï¿½ï¿½
 		SetBkMode( hdc, TRANSPARENT );
 		SetTextColor( hdc, parent->mouseover ? RGB( 0x84, 0, 0 ): RGB( 0, 0, 0xff ) );
 		hOldFont = (HFONT)SelectObject( hdc, (HGDIOBJ)hFont );
 		TextOut( hdc, 2, 0, szText, lstrlen( szText ) );
 		SelectObject( hdc, (HGDIOBJ)hOldFont );
 
-		// ƒtƒH[ƒJƒX˜g•`‰æ
+		// ï¿½tï¿½Hï¿½[ï¿½Jï¿½Xï¿½gï¿½`ï¿½ï¿½
 		if( GetFocus() == hWnd )
 			DrawFocusRect( hdc, &rc );
 
@@ -2178,13 +2178,13 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		hdc = (HDC)wParam;
 		GetClientRect( hWnd, &rc );
 
-		// ”wŒi•`‰æ
+		// ï¿½wï¿½iï¿½`ï¿½ï¿½
 		if( parent->mouseover ){
-			// ƒnƒCƒ‰ƒCƒg”wŒi•`‰æ
+			// ï¿½nï¿½Cï¿½ï¿½ï¿½Cï¿½gï¿½ï¿½ï¿½wï¿½iï¿½`ï¿½ï¿½
 			SetBkColor( hdc, RGB( 0xff, 0xff, 0 ) );
 			ExtTextOut( hdc, 0, 0, ETO_OPAQUE, &rc, NULL, 0, NULL );
 		}else{
-			// e‚ÉWM_CTLCOLORSTATIC‚ğ‘—‚Á‚Ä”wŒiƒuƒ‰ƒV‚ğæ“¾‚µA”wŒi•`‰æ‚·‚é
+			// ï¿½eï¿½ï¿½WM_CTLCOLORSTATICï¿½ğ‘—‚ï¿½ï¿½Ä”wï¿½iï¿½uï¿½ï¿½ï¿½Vï¿½ï¿½ï¿½æ“¾ï¿½ï¿½ï¿½Aï¿½wï¿½iï¿½`ï¿½æ‚·ï¿½ï¿½
 			HBRUSH hbr;
 			HBRUSH hbrOld;
 
@@ -2196,13 +2196,13 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 		return (LRESULT)1;
 
 	case WM_DESTROY:
-		// Œãn––
+		// ï¿½ï¿½nï¿½ï¿½
 		SetWindowLongPtr( hWnd, GWLP_WNDPROC, (LONG_PTR)parent->proc );
 		if( parent->font != NULL ) {
 			DeleteObject( parent->font );
 		}
 
-		// ƒ}ƒEƒXƒJ[ƒ\ƒ‹‚ğŒ³‚É–ß‚·B
+		// ï¿½}ï¿½Eï¿½Xï¿½Jï¿½[ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½É–ß‚ï¿½ï¿½B
 		SystemParametersInfo(SPI_SETCURSORS, 0, NULL, 0);
 		return (LRESULT)0;
 	}
@@ -2210,7 +2210,7 @@ static LRESULT CALLBACK UrlWndProc( HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
 	return CallWindowProc( parent->proc, hWnd, msg, wParam, lParam );
 }
 
-// static text‚ÉƒvƒƒV[ƒWƒƒ‚ğİ’è‚µAƒTƒuƒNƒ‰ƒX‰»‚·‚éB
+// static textï¿½Éƒvï¿½ï¿½ï¿½Vï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½İ’è‚µï¿½Aï¿½Tï¿½uï¿½Nï¿½ï¿½ï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½B
 static void do_subclass_window(HWND hWnd, url_subclass_t *parent)
 {
 	HFONT hFont;
@@ -2222,16 +2222,16 @@ static void do_subclass_window(HWND hWnd, url_subclass_t *parent)
 		return;
 	}
 
-	// e‚ÌƒvƒƒV[ƒWƒƒ‚ğƒTƒuƒNƒ‰ƒX‚©‚çQÆ‚Å‚«‚é‚æ‚¤‚ÉAƒ|ƒCƒ“ƒ^‚ğ“o˜^‚µ‚Ä‚¨‚­B
+	// ï¿½eï¿½Ìƒvï¿½ï¿½ï¿½Vï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½Tï¿½uï¿½Nï¿½ï¿½ï¿½Xï¿½ï¿½ï¿½ï¿½Qï¿½Æ‚Å‚ï¿½ï¿½ï¿½æ‚¤ï¿½ÉAï¿½|ï¿½Cï¿½ï¿½ï¿½^ï¿½ï¿½oï¿½^ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ï¿½B
 	SetWindowLongPtr( hWnd, GWLP_USERDATA, (LONG_PTR)parent );
-	// ƒTƒuƒNƒ‰ƒX‚ÌƒvƒƒV[ƒWƒƒ‚ğ“o˜^‚·‚éB
+	// ï¿½Tï¿½uï¿½Nï¿½ï¿½ï¿½Xï¿½Ìƒvï¿½ï¿½ï¿½Vï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½oï¿½^ï¿½ï¿½ï¿½ï¿½B
 	parent->proc = (WNDPROC)SetWindowLongPtr( hWnd, GWLP_WNDPROC, (LONG_PTR)UrlWndProc);
 
-	// ‰ºü‚ğ•t‚¯‚é
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½tï¿½ï¿½ï¿½ï¿½
 	hFont = (HFONT)SendMessage( hWnd, WM_GETFONT, (WPARAM)0, (LPARAM)0 );
 	GetObject( hFont, sizeof(lf), &lf );
 	lf.lfUnderline = TRUE;
-	parent->font = hFont = CreateFontIndirect( &lf ); // •s—v‚É‚È‚Á‚½‚çíœ‚·‚é‚±‚Æ
+	parent->font = hFont = CreateFontIndirect( &lf ); // ï¿½sï¿½vï¿½É‚È‚ï¿½ï¿½ï¿½ï¿½ï¿½íœï¿½ï¿½ï¿½é‚±ï¿½ï¿½
 	if (hFont != NULL) {
 		SendMessage( hWnd, WM_SETFONT, (WPARAM)hFont, (LPARAM)FALSE );
 	}
@@ -2241,7 +2241,7 @@ static void do_subclass_window(HWND hWnd, url_subclass_t *parent)
 }
 
 #if defined(_MSC_VER)
-// ƒrƒ‹ƒh‚µ‚½‚Æ‚«‚Ég‚í‚ê‚½Visual C++‚Ìƒo[ƒWƒ‡ƒ“‚ğæ“¾‚·‚é(2009.3.3 yutaka)
+// ï¿½rï¿½ï¿½ï¿½hï¿½ï¿½ï¿½ï¿½ï¿½Æ‚ï¿½ï¿½Égï¿½ï¿½ê‚½Visual C++ï¿½Ìƒoï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ“¾ï¿½ï¿½ï¿½ï¿½(2009.3.3 yutaka)
 static void GetCompilerInfo(char *buf, size_t buf_size)
 {
 	char tmpbuf[128];
@@ -2319,13 +2319,13 @@ static void GetCompilerInfo(char *buf, size_t buf_size)
 #endif
 
 #if defined(WDK_NTDDI_VERSION)
-// ƒrƒ‹ƒh‚µ‚½‚Æ‚«‚Ég‚í‚ê‚½ SDK ‚Ìƒo[ƒWƒ‡ƒ“‚ğæ“¾‚·‚é
+// ï¿½rï¿½ï¿½ï¿½hï¿½ï¿½ï¿½ï¿½ï¿½Æ‚ï¿½ï¿½Égï¿½ï¿½ê‚½ SDK ï¿½Ìƒoï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ“¾ï¿½ï¿½ï¿½ï¿½
 // URL: https://developer.microsoft.com/en-us/windows/downloads/sdk-archive/
-// - Visual Studio Installer ‚É•\¦‚³‚ê‚éƒo[ƒWƒ‡ƒ“
-// - ƒCƒ“ƒXƒg[ƒ‹‚³‚ê‚½ SDK ‚ªuƒAƒvƒŠ‚Æ‹@”\v‚Å•\¦‚³‚ê‚éƒo[ƒWƒ‡ƒ“
-// - ã‹L URL ‚Å‚Ì•\¦ƒo[ƒWƒ‡ƒ“
-// - ƒCƒ“ƒXƒg[ƒ‹æƒtƒHƒ‹ƒ_–¼
-// ‚ÅAÅŒã‚ÌƒuƒƒbƒN‚Ì”š‚ª“¯‚¶‚Å‚Í‚È‚¢B
+// - Visual Studio Installer ï¿½É•\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½oï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½
+// - ï¿½Cï¿½ï¿½ï¿½Xï¿½gï¿½[ï¿½ï¿½ï¿½ï¿½ï¿½ê‚½ SDK ï¿½ï¿½ï¿½uï¿½Aï¿½vï¿½ï¿½ï¿½Æ‹@ï¿½\ï¿½vï¿½Å•\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½oï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½
+// - ï¿½ï¿½L URL ï¿½Å‚Ì•\ï¿½ï¿½ï¿½oï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½
+// - ï¿½Cï¿½ï¿½ï¿½Xï¿½gï¿½[ï¿½ï¿½ï¿½ï¿½tï¿½Hï¿½ï¿½ï¿½_ï¿½ï¿½
+// ï¿½ÅAï¿½ÅŒï¿½Ìƒuï¿½ï¿½ï¿½bï¿½Nï¿½Ìï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Å‚Í‚È‚ï¿½ï¿½B
 //
 static void GetSDKInfo(char *buf, size_t buf_size)
 {
@@ -2438,7 +2438,7 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 
 	switch (Message) {
 		case WM_INITDIALOG:
-			// ƒAƒCƒRƒ“‚ğ“®“I‚ÉƒZƒbƒg
+			// ï¿½Aï¿½Cï¿½Rï¿½ï¿½ï¿½ğ“®“Iï¿½ÉƒZï¿½bï¿½g
 			{
 #if defined(EFFECT_ENABLED) || defined(TEXTURE_ENABLED)
 				int fuLoad = LR_DEFAULTCOLOR;
@@ -2448,8 +2448,8 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 				}
 				hicon = LoadImage(hInst, MAKEINTRESOURCE(IDI_TTERM),
 				                  IMAGE_ICON, icon_w, icon_h, fuLoad);
-				// Picture Control ‚É•`‰æ‚·‚é‚ÆA‚È‚º‚©“§‰ßF‚ª“§‰ß‚É‚È‚ç‚¸A•‚Æ‚È‚Á‚Ä‚µ‚Ü‚¤‚½‚ßA
-				// WM_PAINT ‚Å•`‰æ‚·‚éB
+				// Picture Control ï¿½É•`ï¿½æ‚·ï¿½ï¿½ÆAï¿½È‚ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ßFï¿½ï¿½ï¿½ï¿½ï¿½ß‚É‚È‚ç‚¸ï¿½Aï¿½ï¿½ï¿½Æ‚È‚ï¿½ï¿½Ä‚ï¿½ï¿½Ü‚ï¿½ï¿½ï¿½ï¿½ßA
+				// WM_PAINT ï¿½Å•`ï¿½æ‚·ï¿½ï¿½B
 				dlghicon = hicon;
 #else
 				SetDlgItemIcon(Dialog, IDC_TT_ICON, MAKEINTRESOURCEW(IDI_TTERM), 0, 0);
@@ -2458,12 +2458,15 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 
 			SetDlgTexts(Dialog, TextInfos, _countof(TextInfos), UILanguageFile);
 
-			// Tera Term –{‘Ì‚Ìƒo[ƒWƒ‡ƒ“
+			// Tera Term ï¿½{ï¿½Ì‚Ìƒoï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½
 			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "Version %d.%d", TT_VERSION_MAJOR, TT_VERSION_MINOR);
 #if defined(_M_X64)
 			strncat_s(buf, sizeof(buf), " 64bit", _TRUNCATE);
 #endif
-#ifdef SVNVERSION
+#ifdef GITREV
+			_snprintf_s(tmpbuf, sizeof(tmpbuf), _TRUNCATE, " (GIT# %s)", GITREV);
+			strncat_s(buf, sizeof(buf), tmpbuf, _TRUNCATE);
+#elif defined(SVNVERSION)
 			_snprintf_s(tmpbuf, sizeof(tmpbuf), _TRUNCATE, " (SVN# %d)", SVNVERSION);
 			strncat_s(buf, sizeof(buf), tmpbuf, _TRUNCATE);
 #else
@@ -2472,23 +2475,23 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 #endif
 			SetDlgItemTextA(Dialog, IDC_TT_VERSION, buf);
 
-			// Oniguruma‚Ìƒo[ƒWƒ‡ƒ“‚ğİ’è‚·‚é
-			// ƒo[ƒWƒ‡ƒ“‚Ìæ“¾‚Í onig_version() ‚ğŒÄ‚Ño‚·‚Ì‚ª“KØ‚¾‚ªA‚»‚Ì‚½‚ß‚¾‚¯‚Éƒ‰ƒCƒuƒ‰ƒŠ‚ğ
-			// ƒŠƒ“ƒN‚µ‚½‚­‚È‚©‚Á‚½‚Ì‚ÅAˆÈ‰º‚Ì‚æ‚¤‚É‚µ‚½BOniguruma‚Ìƒo[ƒWƒ‡ƒ“‚ªã‚ª‚Á‚½ê‡A
-			// ƒrƒ‹ƒhƒGƒ‰[‚Æ‚È‚é‚©‚à‚µ‚ê‚È‚¢B
+			// Onigurumaï¿½Ìƒoï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ï¿½İ’è‚·ï¿½ï¿½
+			// ï¿½oï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½Ìæ“¾ï¿½ï¿½ onig_version() ï¿½ï¿½ï¿½Ä‚Ñoï¿½ï¿½ï¿½Ì‚ï¿½ï¿½Kï¿½Ø‚ï¿½ï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½Ì‚ï¿½ï¿½ß‚ï¿½ï¿½ï¿½ï¿½Éƒï¿½ï¿½Cï¿½uï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+			// ï¿½ï¿½ï¿½ï¿½ï¿½Nï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì‚ÅAï¿½È‰ï¿½ï¿½Ì‚æ‚¤ï¿½É‚ï¿½ï¿½ï¿½ï¿½BOnigurumaï¿½Ìƒoï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ã‚ªï¿½ï¿½ï¿½ï¿½ï¿½ê‡ï¿½A
+			// ï¿½rï¿½ï¿½ï¿½hï¿½Gï¿½ï¿½ï¿½[ï¿½Æ‚È‚é‚©ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½B
 			// (2005.10.8 yutaka)
-			// ƒ‰ƒCƒuƒ‰ƒŠ‚ğƒŠƒ“ƒN‚µA³‹K‚Ìè‡‚Åƒo[ƒWƒ‡ƒ“‚ğ“¾‚é‚±‚Æ‚É‚µ‚½B
+			// ï¿½ï¿½ï¿½Cï¿½uï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Nï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½Kï¿½Ìè‡ï¿½Åƒoï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ğ“¾‚é‚±ï¿½Æ‚É‚ï¿½ï¿½ï¿½ï¿½B
 			// (2006.7.24 yutaka)
 			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "Oniguruma %s", onig_version());
 			SetDlgItemTextA(Dialog, IDC_ONIGURUMA_LABEL, buf);
 
-			// SFMT‚Ìƒo[ƒWƒ‡ƒ“‚ğİ’è‚·‚é
+			// SFMTï¿½Ìƒoï¿½[ï¿½Wï¿½ï¿½ï¿½ï¿½ï¿½ï¿½İ’è‚·ï¿½ï¿½
 			_snprintf_s(buf, sizeof(buf), _TRUNCATE, "SFMT %s", SFMT_VERSION);
 			SetDlgItemTextA(Dialog, IDC_SFMT_VERSION, buf);
 
 			// build info
 			{
-				// ƒRƒ“ƒpƒCƒ‰A“úASDK
+				// ï¿½Rï¿½ï¿½ï¿½pï¿½Cï¿½ï¿½ï¿½Aï¿½ï¿½ï¿½ï¿½ï¿½ASDK
 				char *info;
 				char sdk[128];
 				GetCompilerInfo(tmpbuf, sizeof(tmpbuf));
@@ -2506,13 +2509,13 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 				free(info);
 			}
 
-			// static text ‚ÌƒTƒCƒY‚ğ•ÏX (2007.4.16 maya)
+			// static text ï¿½ÌƒTï¿½Cï¿½Yï¿½ï¿½ÏX (2007.4.16 maya)
 			hwnd = GetDlgItem(Dialog, IDC_AUTHOR_URL);
 			hdc = GetDC(hwnd);
 			SelectObject(hdc, (HFONT)SendMessage(Dialog, WM_GETFONT, 0, 0));
 			GetDlgItemTextA(Dialog, IDC_AUTHOR_URL, uimsg, sizeof(uimsg));
 			dwExt = GetTabbedTextExtent(hdc,uimsg,strlen(uimsg),0,NULL);
-			w = LOWORD(dwExt) + 5; // •‚ªáŠ±‘«‚è‚È‚¢‚Ì‚Å•â³
+			w = LOWORD(dwExt) + 5; // ï¿½ï¿½ï¿½ï¿½ï¿½áŠ±ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½Ì‚Å•â³
 			h = HIWORD(dwExt);
 			GetWindowRect(hwnd, &r);
 			point.x = r.left;
@@ -2525,7 +2528,7 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 			SelectObject(hdc, (HFONT)SendMessage(Dialog, WM_GETFONT, 0, 0));
 			GetDlgItemTextA(Dialog, IDC_FORUM_URL, uimsg, sizeof(uimsg));
 			dwExt = GetTabbedTextExtent(hdc,uimsg,strlen(uimsg),0,NULL);
-			w = LOWORD(dwExt) + 5; // •‚ªáŠ±‘«‚è‚È‚¢‚Ì‚Å•â³
+			w = LOWORD(dwExt) + 5; // ï¿½ï¿½ï¿½ï¿½ï¿½áŠ±ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½Ì‚Å•â³
 			h = HIWORD(dwExt);
 			GetWindowRect(hwnd, &r);
 			point.x = r.left;
@@ -2533,21 +2536,21 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 			ScreenToClient(Dialog, &point);
 			MoveWindow(hwnd, point.x, point.y, w, h, TRUE);
 
-			// static text‚ğƒTƒuƒNƒ‰ƒX‰»‚·‚éB‚½‚¾‚µAtabstop, notifyƒvƒƒpƒeƒB‚ğ—LŒø‚É‚µ‚Ä‚¨‚©‚È‚¢‚Æ
-			// ƒƒbƒZ[ƒW‚ªE‚¦‚È‚¢B(2005.4.5 yutaka)
+			// static textï¿½ï¿½ï¿½Tï¿½uï¿½Nï¿½ï¿½ï¿½Xï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Bï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Atabstop, notifyï¿½vï¿½ï¿½ï¿½pï¿½eï¿½Bï¿½ï¿½Lï¿½ï¿½ï¿½É‚ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ï¿½È‚ï¿½ï¿½ï¿½
+			// ï¿½ï¿½ï¿½bï¿½Zï¿½[ï¿½Wï¿½ï¿½ï¿½Eï¿½ï¿½ï¿½È‚ï¿½ï¿½B(2005.4.5 yutaka)
 			do_subclass_window(GetDlgItem(Dialog, IDC_AUTHOR_URL), &author_url_class);
 			do_subclass_window(GetDlgItem(Dialog, IDC_FORUM_URL), &forum_url_class);
 
 #if defined(EFFECT_ENABLED) || defined(TEXTURE_ENABLED)
 			/*
-			 * ƒ_ƒCƒAƒƒO‚Ìƒrƒbƒgƒ}ƒbƒv‰»‚ğs‚¢A”wŒi‚ÉƒGƒtƒFƒNƒg‚ğ‚©‚¯‚ç‚ê‚é‚æ‚¤‚É‚·‚éB
+			 * ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½Ìƒrï¿½bï¿½gï¿½}ï¿½bï¿½vï¿½ï¿½ï¿½ï¿½ï¿½sï¿½ï¿½ï¿½Aï¿½wï¿½iï¿½ÉƒGï¿½tï¿½Fï¿½Nï¿½gï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½æ‚¤ï¿½É‚ï¿½ï¿½ï¿½B
 			 * (2011.5.7 yutaka)
 			 */
-			// ƒ_ƒCƒAƒƒO‚ÌƒTƒCƒY
+			// ï¿½_ï¿½Cï¿½Aï¿½ï¿½ï¿½Oï¿½ÌƒTï¿½Cï¿½Y
 			GetWindowRect(Dialog, &dlgrc);
 			dlgw = dlgrc.right - dlgrc.left;
 			dlgh = dlgrc.bottom - dlgrc.top;
-			// ƒrƒbƒgƒ}ƒbƒv‚Ìì¬
+			// ï¿½rï¿½bï¿½gï¿½}ï¿½bï¿½vï¿½Ìì¬
 			dlgdc = CreateCompatibleDC(NULL);
 			ZeroMemory(&bmiHeader, sizeof(BITMAPINFOHEADER));
 			bmiHeader.biSize      = sizeof(BITMAPINFOHEADER);
@@ -2558,7 +2561,7 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 			bmi.bmiHeader = bmiHeader;
 			dlgbmp = CreateDIBSection(NULL, (LPBITMAPINFO)&bmi, DIB_RGB_COLORS, &dlgpixel, NULL, 0);
 			dlgprevbmp = (HBITMAP)SelectObject(dlgdc, dlgbmp);
-			// ƒrƒbƒgƒ}ƒbƒv‚Ì”wŒiFi’©Ä‚¯‚Á‚Û‚¢j‚ğì‚éB
+			// ï¿½rï¿½bï¿½gï¿½}ï¿½bï¿½vï¿½Ì”wï¿½iï¿½Fï¿½iï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ï¿½Û‚ï¿½ï¿½jï¿½ï¿½ï¿½ï¿½ï¿½B
 			for (y = 0 ; y < dlgh ; y++) {
 				double dx = (double)(255 - 180) / dlgw;
 				double dy = (double)255/dlgh;
@@ -2567,11 +2570,11 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 					r = min((int)(180+dx*x), 255);
 					g = min((int)(180+dx*x), 255);
 					b = max((int)(255-y*dx), 0);
-					// ‰æ‘f‚Ì•À‚Ñ‚ÍA‰ºˆÊƒoƒCƒg‚©‚çB, G, R, A‚Æ‚È‚éB
+					// ï¿½ï¿½fï¿½Ì•ï¿½ï¿½Ñ‚ÍAï¿½ï¿½ï¿½Êƒoï¿½Cï¿½gï¿½ï¿½ï¿½ï¿½B, G, R, Aï¿½Æ‚È‚ï¿½B
 					dlgpixel[POS(x, y)] = b | g << 8 | r << 16;
 				}
 			}
-			// 2D Water effect —p
+			// 2D Water effect ï¿½p
 			wavemap = calloc(sizeof(short), dlgw * dlgh);
 			wavemap_old = calloc(sizeof(short), dlgw * dlgh);
 			dlgorgpixel = calloc(sizeof(DWORD), dlgw * dlgh);
@@ -2581,11 +2584,11 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 
 
 #ifdef EFFECT_ENABLED
-			// ƒGƒtƒFƒNƒgƒ^ƒCƒ}[‚ÌŠJn
+			// ï¿½Gï¿½tï¿½Fï¿½Nï¿½gï¿½^ï¿½Cï¿½}ï¿½[ï¿½ÌŠJï¿½n
 			SetTimer(Dialog, ID_EFFECT_TIMER, 100, NULL);
 #endif
 
-			// ‰æ–Ê‚ÌF”‚ğ’²‚×‚éB
+			// ï¿½ï¿½Ê‚ÌFï¿½ï¿½ï¿½ğ’²‚×‚ï¿½B
 			hwnd = GetDesktopWindow();
 			hdc = GetDC(hwnd);
 			bitspixel = GetDeviceCaps(hdc, BITSPIXEL);
@@ -2633,7 +2636,7 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 			break;
 
 #if defined(EFFECT_ENABLED) || defined(TEXTURE_ENABLED)
-		// static text‚Ì”wŒi‚ğ“§‰ß‚³‚¹‚éB
+		// static textï¿½Ì”wï¿½iï¿½ğ“§‰ß‚ï¿½ï¿½ï¿½ï¿½ï¿½B
 		case WM_CTLCOLORSTATIC:
 			SetBkMode((HDC)wParam, TRANSPARENT);
 			return (BOOL)GetStockObject( NULL_BRUSH );
@@ -2694,8 +2697,8 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 				}
 				waveflag ^= 1;
 
-				// …–Ê‚ÌŒvZ
-				// ƒAƒ‹ƒSƒŠƒYƒ€‚Í‰º‹LƒTƒCƒg(2D Water)‚æ‚èB
+				// ï¿½ï¿½ï¿½Ê‚ÌŒvï¿½Z
+				// ï¿½Aï¿½ï¿½ï¿½Sï¿½ï¿½ï¿½Yï¿½ï¿½ï¿½Í‰ï¿½ï¿½Lï¿½Tï¿½Cï¿½g(2D Water)ï¿½ï¿½ï¿½B
 				// cf. http://freespace.virgin.net/hugo.elias/graphics/x_water.htm
 				for (y = 1; y < dlgh - 1 ; y++) {
 					for (x = 1; x < dlgw - 1 ; x++) {
@@ -2708,7 +2711,7 @@ static INT_PTR CALLBACK AboutDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARA
 					}
 				}
 
-				// …–Ê‚Ì•`‰æ
+				// ï¿½ï¿½ï¿½Ê‚Ì•`ï¿½ï¿½
 				for (y = 1; y < dlgh - 1 ; y++) {
 					for (x = 1; x < dlgw - 1 ; x++) {
 						xdiff = p_old[POS(x+1,y)] - p_old[POS(x,y)];
@@ -2750,7 +2753,7 @@ static const wchar_t *get_lang_folder()
 	return (IsWindowsNTKernel()) ? L"lang_utf16le" : L"lang";
 }
 
-// ƒƒ‚ƒŠƒtƒŠ[
+// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½tï¿½ï¿½ï¿½[
 static void free_lang_ui_list()
 {
 	if (LangUIList) {
@@ -2887,7 +2890,7 @@ static INT_PTR CALLBACK GenDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 				SendDlgItemMessage(Dialog, IDC_GENLANG, CB_SETCURSEL, sel, 0);
 			}
 
-			// Å‰‚Éw’è‚³‚ê‚Ä‚¢‚éŒ¾Œêƒtƒ@ƒCƒ‹‚Ì”Ô†‚ğŠo‚¦‚Ä‚¨‚­B
+			// ï¿½Åï¿½ï¿½Éwï¿½è‚³ï¿½ï¿½Ä‚ï¿½ï¿½éŒ¾ï¿½ï¿½tï¿½@ï¿½Cï¿½ï¿½ï¿½Ì”Ôï¿½ï¿½ï¿½ï¿½oï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ï¿½B
 			uilist_count = make_sel_lang_ui(ts->ExeDirW);
 			langui_sel = get_sel_lang_ui(LangUIList, ts->UILanguageFileW_ini);
 			if (LangUIList[0] != NULL) {
@@ -2925,8 +2928,8 @@ static INT_PTR CALLBACK GenDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 							w = (WORD)GetCurSel(Dialog, IDC_GENLANG);
 							language = (int)SendDlgItemMessageA(Dialog, IDC_GENLANG, CB_GETITEMDATA, w - 1, 0);
 
-							// Language ‚ª•ÏX‚³‚ê‚½‚Æ‚«A
-							// KanjiCode/KanjiCodeSend ‚ğ•ÏXæ‚Ì Language ‚É‘¶İ‚·‚é’l‚É’u‚«Š·‚¦‚é
+							// Language ï¿½ï¿½ï¿½ÏXï¿½ï¿½ï¿½ê‚½ï¿½Æ‚ï¿½ï¿½A
+							// KanjiCode/KanjiCodeSend ï¿½ï¿½ÏXï¿½ï¿½ï¿½ Language ï¿½É‘ï¿½ï¿½İ‚ï¿½ï¿½ï¿½lï¿½É’uï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 							if (1 <= language && language <= IdLangMax && language != ts->Language) {
 								WORD KanjiCode = ts->KanjiCode;
 								WORD KanjiCodeSend = ts->KanjiCodeSend;
@@ -2938,7 +2941,7 @@ static INT_PTR CALLBACK GenDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 
 						}
 
-						// Œ¾Œêƒtƒ@ƒCƒ‹‚ª•ÏX‚³‚ê‚Ä‚¢‚½ê‡
+						// ï¿½ï¿½ï¿½ï¿½tï¿½@ï¿½Cï¿½ï¿½ï¿½ï¿½ï¿½ÏXï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½ï¿½ï¿½ê‡
 						w = (WORD)GetCurSel(Dialog, IDC_GENLANG_UI);
 						if (1 <= w && w <= uilist_count && w != langui_sel) {
 							aswprintf(&ts->UILanguageFileW_ini, L"%s\\%s", get_lang_folder(), LangUIList[w - 1]);
@@ -2947,14 +2950,14 @@ static INT_PTR CALLBACK GenDlg(HWND Dialog, UINT Message, WPARAM wParam, LPARAM 
 							ts->UILanguageFileW = GetUILanguageFileFullW(ts->ExeDirW, ts->UILanguageFileW_ini);
 							WideCharToACP_t(ts->UILanguageFileW, ts->UILanguageFile, sizeof(ts->UILanguageFile));
 
-							// ƒ^ƒCƒgƒ‹‚ÌXV‚ğs‚¤B(2014.2.23 yutaka)
+							// ï¿½^ï¿½Cï¿½gï¿½ï¿½ï¿½ÌXï¿½Vï¿½ï¿½ï¿½sï¿½ï¿½ï¿½B(2014.2.23 yutaka)
 							PostMessage(GetParent(Dialog),WM_USER_CHANGETITLE,0,0);
 						}
 					}
 
-					// TTXKanjiMenu ‚Í Language ‚ğŒ©‚Äƒƒjƒ…[‚ğ•\¦‚·‚é‚Ì‚ÅA•ÏX‚Ì‰Â”\«‚ª‚ ‚é
-					// OK ‰Ÿ‰º‚Éƒƒjƒ…[Ä•`‰æ‚ÌƒƒbƒZ[ƒW‚ğ”ò‚Î‚·‚æ‚¤‚É‚µ‚½B (2007.7.14 maya)
-					// Œ¾Œêƒtƒ@ƒCƒ‹‚Ì•ÏX‚Éƒƒjƒ…[‚ÌÄ•`‰æ‚ª•K—v (2012.5.5 maya)
+					// TTXKanjiMenu ï¿½ï¿½ Language ï¿½ï¿½ï¿½ï¿½ï¿½Äƒï¿½ï¿½jï¿½ï¿½ï¿½[ï¿½ï¿½\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì‚ÅAï¿½ÏXï¿½Ì‰Â”\ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+					// OK ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Éƒï¿½ï¿½jï¿½ï¿½ï¿½[ï¿½Ä•`ï¿½ï¿½Ìƒï¿½ï¿½bï¿½Zï¿½[ï¿½Wï¿½ï¿½ï¿½Î‚ï¿½ï¿½æ‚¤ï¿½É‚ï¿½ï¿½ï¿½ï¿½B (2007.7.14 maya)
+					// ï¿½ï¿½ï¿½ï¿½tï¿½@ï¿½Cï¿½ï¿½ï¿½Ì•ÏXï¿½ï¿½ï¿½Éƒï¿½ï¿½jï¿½ï¿½ï¿½[ï¿½ÌÄ•`ï¿½æ‚ªï¿½Kï¿½v (2012.5.5 maya)
 					PostMessage(GetParent(Dialog),WM_USER_CHANGEMENU,0,0);
 
 					EndDialog(Dialog, 1);
@@ -3075,7 +3078,7 @@ BOOL WINAPI _SetupTerminal(HWND WndParent, PTTSet ts)
 		i = IDD_TERMDLGK;
 		break;
 	default:
-		// g‚Á‚Ä‚¢‚È‚¢
+		// ï¿½gï¿½ï¿½ï¿½Ä‚ï¿½ï¿½È‚ï¿½
 		i = IDD_TERMDLG;
 	}
 
@@ -3171,15 +3174,15 @@ static UINT_PTR CALLBACK TFontHook(HWND Dialog, UINT Message, WPARAM wParam, LPA
 		case WM_COMMAND:
 			if (LOWORD(wParam) == cmb2) {
 				if (HIWORD(wParam) == CBN_SELCHANGE) {
-					// ƒtƒHƒ“ƒg‚Ì•ÏX‚É‚æ‚é(ƒƒbƒZ[ƒW‚É‚æ‚é)ƒXƒ^ƒCƒ‹‚Ì•ÏX‚Å‚Í
-					// cmb2 ‚©‚ç‚Ì’Ê’m‚ª—ˆ‚È‚¢
+					// ï¿½tï¿½Hï¿½ï¿½ï¿½gï¿½Ì•ÏXï¿½É‚ï¿½ï¿½(ï¿½ï¿½ï¿½bï¿½Zï¿½[ï¿½Wï¿½É‚ï¿½ï¿½)ï¿½Xï¿½^ï¿½Cï¿½ï¿½ï¿½Ì•ÏXï¿½Å‚ï¿½
+					// cmb2 ï¿½ï¿½ï¿½ï¿½Ì’Ê’mï¿½ï¿½ï¿½ï¿½ï¿½È‚ï¿½
 					SendMessage(GetDlgItem(Dialog, cmb2), CB_GETCURSEL, 0, 0);
 				}
 			}
 			else if (LOWORD(wParam) == cmb1) {
 				if (HIWORD(wParam) == CBN_SELCHANGE) {
-					// ƒtƒHƒ“ƒg‚Ì•ÏX‘O‚Éˆê•Û‘¶‚³‚ê‚½ƒXƒ^ƒCƒ‹‚ª
-					// ‚±‚±‚ğ”²‚¯‚½‚ ‚Æ‚É‰ü‚ß‚ÄƒZƒbƒg‚³‚ê‚Ä‚µ‚Ü‚¤‚æ‚¤‚¾
+					// ï¿½tï¿½Hï¿½ï¿½ï¿½gï¿½Ì•ÏXï¿½Oï¿½Éˆêï¿½Û‘ï¿½ï¿½ï¿½ï¿½ê‚½ï¿½Xï¿½^ï¿½Cï¿½ï¿½ï¿½ï¿½
+					// ï¿½ï¿½ï¿½ï¿½ï¿½ğ”²‚ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Æ‚É‰ï¿½ï¿½ß‚ÄƒZï¿½bï¿½gï¿½ï¿½ï¿½ï¿½Ä‚ï¿½ï¿½Ü‚ï¿½ï¿½æ‚¤ï¿½ï¿½
 					SendMessage(GetDlgItem(Dialog, cmb2), CB_GETCURSEL, 0, 0);
 				}
 			}
