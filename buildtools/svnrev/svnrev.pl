@@ -99,15 +99,15 @@ sub write_info_header
 	open(my $FD, ">$out_header") || die "error $out_header";
 	print $FD "/* $header */\n";
 	print $FD "/* #define TT_VERSION_STR \"$version\" check teraterm/common/tt-version.h */\n";
-	if ($revision ne '') {
-		print $FD "#define SVNVERSION $revision\n";
-	} else {
-		print $FD "#undef SVNVERSION\n";
-	}
 	if ($gitrevision ne '') {
 		print $FD "#define GITREV \"$gitrevision\"\n";
 	} else {
 		print $FD "#undef GITREV\n";
+	}
+	if ($revision ne '') {
+		print $FD "#define SVNVERSION $revision\n";
+	} else {
+		print $FD "#undef SVNVERSION\n";
 	}
 	if ($svninfo{'release'}) {
 		print $FD "#define TERATERM_RELEASE 1\n";
@@ -127,15 +127,15 @@ sub write_info_bat
 	open(my $FD, ">$out_bat") || die "error $out_bat";
 	print $FD "\@rem $header\n";
 	print $FD "set VERSION=$version\n";
-	if ($revision ne '') {
-		print $FD "set SVNVERSION=$revision\n";
-	} else {
-		print $FD "set SVNVERSION=unknown\n";
-	}
 	if ($gitrevision ne '') {
 		print $FD "set GITREV=$gitrevision\n";
 	} else {
 		print $FD "set GITREV=unknown\n";
+	}
+	if ($revision ne '') {
+		print $FD "set SVNVERSION=$revision\n";
+	} else {
+		print $FD "set SVNVERSION=unknown\n";
 	}
 	print $FD "set RELEASE=$svninfo{'release'}\n";
 	print $FD "set DATE=$date\n";
@@ -152,15 +152,15 @@ sub write_info_cmake
 	open(my $FD, ">$out_cmake") || die "error $out_cmake";
 	print $FD "# $header\n";
 	print $FD "set(VERSION \"$version\")\n";
-	if ($revision ne '') {
-		print $FD "set(SVNVERSION \"$revision\")\n";
-	} else {
-		print $FD "#set(SVNVERSION \"0000\")\n";
-	}
 	if ($gitrevision ne '') {
 		print $FD "set(GITREV \"$gitrevision\")\n";
 	} else {
 		print $FD "#set(GITREV \"\")\n";
+	}
+	if ($revision ne '') {
+		print $FD "set(SVNVERSION \"$revision\")\n";
+	} else {
+		print $FD "#set(SVNVERSION \"0000\")\n";
 	}
 	print $FD "set(RELEASE $svninfo{'release'})\n";
 	print $FD "set(DATE \"$date\")\n";
