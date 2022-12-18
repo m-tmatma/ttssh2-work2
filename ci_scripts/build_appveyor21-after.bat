@@ -1,7 +1,7 @@
 echo on
 echo ------------------- APPVEYOR 21 after------------------------------
 cd %BUILD_DIR%
-if not defined GITREV (
+if defined GITREV (
     set REVISION=%GITREV%
 ) else (
     set REVISION=r%SVNVERSION%
