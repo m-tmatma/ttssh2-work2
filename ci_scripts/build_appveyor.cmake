@@ -32,9 +32,9 @@ if(DEFINED GITREV)
 else
   set(REVSION "r${SVNVERSION}")
 endif()
-set(ZIP_FILE "snapshot-${VERSION}-${REVSION}-appveyor-${COMPILER_FRIENDLY}.zip")
-set(SETUP_FILE "snapshot-${VERSION}-${REVSION}-appveyor-${COMPILER_FRIENDLY}")
-set(SNAPSHOT_DIR "snapshot-${VERSION}-${REVSION}-appveyor-${COMPILER_FRIENDLY}")
+set(ZIP_FILE "snapshot-${VERSION}-${REVSION}-githubactions-${COMPILER_FRIENDLY}.zip")
+set(SETUP_FILE "snapshot-${VERSION}-${REVSION}-githubactions-${COMPILER_FRIENDLY}")
+set(SNAPSHOT_DIR "snapshot-${VERSION}-${REVSION}-githubactions-${COMPILER_FRIENDLY}")
 
 list(APPEND BUILD_OPTIONS "--config" "Release")
 list(APPEND GENERATE_OPTIONS "-DSNAPSHOT_DIR=${SNAPSHOT_DIR}" "-DSETUP_ZIP=${ZIP_FILE}" "-DSETUP_EXE=${SETUP_FILE}" "-DSETUP_RELEASE=${RELEASE}")
