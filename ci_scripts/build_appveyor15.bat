@@ -5,7 +5,7 @@ echo ------------------- APPVEYOR 17 -----------------------------------
 echo ------------------- APPVEYOR 18 -----------------------------------
 echo ------------------- APPVEYOR 19 -----------------------------------
 cd %BUILD_DIR%
-if "%GITREV%"!="" (
+if not defined GITREV (
     set REVISION=%GITREV%
 ) else (
     set REVISION=r%SVNVERSION%
