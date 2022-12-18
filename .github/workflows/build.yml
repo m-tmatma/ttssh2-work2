@@ -272,10 +272,10 @@ jobs:
           # See https://github.com/actions/upload-artifact#retention-period
           retention-days: 2
 
-      - name: artifacts build
+      - name: artifacts installer
         uses: actions/upload-artifact@v3
         with:
-          name: artifacts-build${{github.run_number}}-id${{github.run_id}}-${{ env.GITREV }}-${{ matrix.ARTIFACT_SUFFIX }}
+          name: artifacts-installer-build${{github.run_number}}-id${{github.run_id}}-${{ env.GITREV }}-${{ matrix.ARTIFACT_SUFFIX }}
           path: |
             build/snapshot*.exe
           # See https://github.com/actions/upload-artifact#retention-period
