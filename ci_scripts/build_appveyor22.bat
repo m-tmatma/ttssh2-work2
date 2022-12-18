@@ -1,7 +1,7 @@
 echo on
 echo ------------------- APPVEYOR 22 -----------------------------------
 cd %BUILD_DIR%
-if "%GITREV%"=="" (
+if "%GITREV%"!="" (
     set REVISION=%GITREV%
 ) else (
     set REVISION=r%SVNVERSION%
