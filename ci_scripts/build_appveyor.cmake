@@ -19,6 +19,7 @@ file(MAKE_DIRECTORY ${BUILD_DIR}/teraterm/ttpdlg)
 execute_process(
   COMMAND perl ${CMAKE_CURRENT_LIST_DIR}/../buildtools/svnrev/svnrev.pl -v --root "${CMAKE_CURRENT_LIST_DIR}/.." --header ${BUILD_DIR}/teraterm/ttpdlg/svnversion.h --cmake ${BUILD_DIR}/build_config.cmake
   WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/../buildtools/svnrev
+  COMMAND_ERROR_IS_FATAL ANY
   )
 
 
@@ -54,6 +55,7 @@ if(NOT EXISTS "${CMAKE_CURRENT_LIST_DIR}/../libs/openssl11_mingw")
   execute_process(
     COMMAND ${CMAKE_COMMAND} "-DCMAKE_GENERATOR=Unix Makefiles" -P ${CMAKE_CURRENT_LIST_DIR}/../libs/buildall.cmake
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/../libs
+    COMMAND_ERROR_IS_FATAL ANY
     )
 endif()
 
@@ -62,16 +64,20 @@ endif()
 execute_process(
   COMMAND ${CMAKE_COMMAND} "${CMAKE_CURRENT_LIST_DIR}/.." ${GENERATE_OPTIONS}
   WORKING_DIRECTORY ${BUILD_DIR}
+  COMMAND_ERROR_IS_FATAL ANY
   )
 execute_process(
   COMMAND ${CMAKE_COMMAND} --build . --target install ${BUILD_OPTIONS} ${BUILD_TOOL_OPTIONS}
   WORKING_DIRECTORY ${BUILD_DIR}
+  COMMAND_ERROR_IS_FATAL ANY
   )
 execute_process(
   COMMAND ${CMAKE_COMMAND} --build . --target zip
   WORKING_DIRECTORY ${BUILD_DIR}
+  COMMAND_ERROR_IS_FATAL ANY
   )
 execute_process(
   COMMAND ${CMAKE_COMMAND} --build . --target inno_setup
   WORKING_DIRECTORY ${BUILD_DIR}
+  COMMAND_ERROR_IS_FATAL ANY
   )

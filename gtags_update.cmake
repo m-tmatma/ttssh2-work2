@@ -22,8 +22,10 @@ execute_process(
   COMMAND ${GREP} -v build
   OUTPUT_FILE gtags.files
   WORKING_DIRECTORY "."
+  COMMAND_ERROR_IS_FATAL ANY
   )
 execute_process(
   COMMAND ${GTAGS} -f gtags.files
+  COMMAND_ERROR_IS_FATAL ANY
   )
 # see doc_internal/readme.md

@@ -26,6 +26,7 @@ function(cmake_generate GENERATOR SRC_DIR WORKING_DIR OPTIONS)
     WORKING_DIRECTORY "${BUILD_DIR}"
     ENCODING AUTO
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake build fail ${rv}")
@@ -39,6 +40,7 @@ function(cmake_build WORKING_DIR OPTIONS BUILD_TOOL_OPTIONS)
     WORKING_DIRECTORY "${BUILD_DIR}"
     ENCODING AUTO
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake build fail ${rv}")
@@ -51,6 +53,7 @@ file(MAKE_DIRECTORY ${SRC_DIR})
 
 execute_process(
   COMMAND ${CMAKE_COMMAND} -DTARGET=libressl -DEXT_DIR=${EXTRACT_DIR} -P download.cmake
+  COMMAND_ERROR_IS_FATAL ANY
 )
 
 if(${SRC_DIR}/COPYING IS_NEWER_THAN ${CMAKE_CURRENT_LIST_DIR}/doc_help/LibreSSL-LICENSE.txt)

@@ -20,6 +20,7 @@ file(MAKE_DIRECTORY "unrar")
 execute_process(
   COMMAND ../download/unrar/${UNRAR_ZIP} /s
   WORKING_DIRECTORY "unrar"
+  COMMAND_ERROR_IS_FATAL ANY
   )
 
 # innounp

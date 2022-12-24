@@ -7,4 +7,5 @@ message("${HHC} ${HHP}")
 
 execute_process(
   COMMAND ${HHC} ${HHP}
+  COMMAND_ERROR_IS_FATAL ANY
 )

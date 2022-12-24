@@ -241,7 +241,9 @@ function(symbol_prefix)
   execute_process(COMMAND "${CMAKE_C_COMPILER}" "-E" "-"
                   INPUT_FILE /dev/null
                   OUTPUT_VARIABLE OUT
-                  RESULT_VARIABLE STATUS)
+                  RESULT_VARIABLE STATUS
+                  COMMAND_ERROR_IS_FATAL ANY
+                  )
 
   if(CPP_FAIL)
     message(WARNING "Failed to run the C preprocessor")
@@ -785,11 +787,15 @@ function(create_symlink DEST_FILE)
     if(CMAKE_HOST_WIN32 AND NOT CYGWIN)
       execute_process(
         COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${S_FILE} ${DEST_FILE}
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMAND_ERROR_IS_FATAL ANY
+        )
     else()
       execute_process(
         COMMAND ${CMAKE_COMMAND} -E create_symlink ${S_FILE} ${DEST_FILE}
-        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+        COMMAND_ERROR_IS_FATAL ANY
+        )
     endif()
   endif()
 

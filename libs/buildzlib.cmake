@@ -13,6 +13,7 @@ if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQU
       -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/VSToolchain.cmake
       -DARCHITECTURE=${ARCHITECTURE}
       -P buildzlib.cmake
+      COMMAND_ERROR_IS_FATAL ANY
       )
     execute_process(
       COMMAND ${CMAKE_COMMAND}
@@ -21,6 +22,7 @@ if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQU
       -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/VSToolchain.cmake
       -DARCHITECTURE=${ARCHITECTURE}
       -P buildzlib.cmake
+      COMMAND_ERROR_IS_FATAL ANY
       )
     return()
   elseif(("$ENV{MSYSTEM}" MATCHES "MINGW") OR ("${CMAKE_COMMAND}" MATCHES "mingw"))
@@ -71,6 +73,7 @@ file(MAKE_DIRECTORY ${SRC_DIR})
 
 execute_process(
   COMMAND ${CMAKE_COMMAND} -DTARGET=zlib -DEXT_DIR=${EXTRACT_DIR} -P download.cmake
+  COMMAND_ERROR_IS_FATAL ANY
 )
 
 if(${SRC_DIR}/README IS_NEWER_THAN ${CMAKE_CURRENT_LIST_DIR}/doc_help/zlib-LICENSE.txt)
@@ -100,6 +103,7 @@ if("${CMAKE_GENERATOR}" MATCHES "Visual Studio")
     ${TOOLCHAINFILE}
     WORKING_DIRECTORY ${BUILD_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake generate fail ${rv}")
@@ -109,6 +113,7 @@ if("${CMAKE_GENERATOR}" MATCHES "Visual Studio")
     COMMAND ${CMAKE_COMMAND} --build . --config ${CMAKE_CONFIGURATION_TYPE} --target install
     WORKING_DIRECTORY ${BUILD_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake install fail ${rv}")
@@ -124,6 +129,7 @@ else()
     -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
     WORKING_DIRECTORY ${BUILD_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake build fail ${rv}")
@@ -133,6 +139,7 @@ else()
     COMMAND ${CMAKE_COMMAND} --build . --target install
     WORKING_DIRECTORY ${BUILD_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake install fail ${rv}")

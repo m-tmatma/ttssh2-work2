@@ -15,6 +15,7 @@ if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQU
       -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/VSToolchain.cmake
       -DARCHITECTURE=${ARCHITECTURE}
       -P buildopenssl3.cmake
+      COMMAND_ERROR_IS_FATAL ANY
       )
     execute_process(
       COMMAND ${CMAKE_COMMAND}
@@ -23,6 +24,7 @@ if(("${CMAKE_BUILD_TYPE}" STREQUAL "") AND ("${CMAKE_CONFIGURATION_TYPE}" STREQU
       -DCMAKE_TOOLCHAIN_FILE=${CMAKE_SOURCE_DIR}/VSToolchain.cmake
       -DARCHITECTURE=${ARCHITECTURE}
       -P buildopenssl3.cmake
+      COMMAND_ERROR_IS_FATAL ANY
       )
     return()
   elseif("$ENV{MSYSTEM}" MATCHES "MINGW32")
@@ -123,11 +125,13 @@ if(NOT EXISTS "${SRC_DIR}/README.md")
 
   execute_process(
     COMMAND ${CMAKE_COMMAND} -E make_directory ${EXTRACT_DIR}
+    COMMAND_ERROR_IS_FATAL ANY
     )
 
   execute_process(
     COMMAND ${CMAKE_COMMAND} -E tar "xvf" ${DOWN_DIR}/${SRC_ARC}
     WORKING_DIRECTORY ${EXTRACT_DIR}
+    COMMAND_ERROR_IS_FATAL ANY
     )
 
   file(COPY
@@ -268,6 +272,7 @@ if((${CMAKE_GENERATOR} MATCHES "Visual Studio") OR
     COMMAND cmd /c ${BUILD_CMAKE_BAT_N}
     WORKING_DIRECTORY ${SRC_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake build fail ${rv}")
@@ -276,7 +281,9 @@ else()
   ######################################## MinGW
   execute_process(
     COMMAND "uname" -s
-    OUTPUT_VARIABLE ov)
+    OUTPUT_VARIABLE ov
+    COMMAND_ERROR_IS_FATAL ANY
+    )
   string(REGEX MATCH "[A-Za-z0-9]+" UNAME_S ${ov})
   if("${UNAME_S}" STREQUAL "CYGWIN")
     find_program(
@@ -317,6 +324,7 @@ else()
     COMMAND ${CMAKE_COMMAND} -E env "PATH=/usr/bin:/bin" ${PERL} ./Configure no-asm no-async no-shared no-capieng -no-dso -no-engine ${CONFIG_NAME} -D_WIN32_WINNT=0x0501 --prefix=${INSTALL_DIR} --openssldir=${INSTALL_DIR}/SSL
     WORKING_DIRECTORY ${SRC_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake configure fail ${rv}")
@@ -326,6 +334,7 @@ else()
     COMMAND ${CMAKE_COMMAND} -E env "PATH=${PATH}" ${MAKE} CC=${CMAKE_C_COMPILER} ${MAKE_OPTION}
     WORKING_DIRECTORY ${SRC_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake build fail ${rv}")
@@ -334,6 +343,7 @@ else()
     COMMAND ${CMAKE_COMMAND} -E env "PATH=${PATH}" ${MAKE} install ${MAKE_OPTION}
     WORKING_DIRECTORY ${SRC_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "cmake install fail ${rv}")

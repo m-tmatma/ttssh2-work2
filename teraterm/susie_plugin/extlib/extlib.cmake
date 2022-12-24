@@ -15,17 +15,23 @@ file(DOWNLOAD
 file(MAKE_DIRECTORY "build/zlib/src")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -E tar -xf ${CMAKE_CURRENT_SOURCE_DIR}/download/zlib-1.2.11.tar.xz
-  WORKING_DIRECTORY "build/zlib/src")
+  WORKING_DIRECTORY "build/zlib/src"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 execute_process(
   COMMAND ${CMAKE_COMMAND} -E copy patched_file/zlib-1.2.11/CMakeLists.txt build/zlib/src/zlib-1.2.11)
 file(MAKE_DIRECTORY "build/zlib/build")
 execute_process(
   COMMAND ${CMAKE_COMMAND} ../src/zlib-1.2.11 -DASM686=off -DAMD64=off
   -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_SOURCE_DIR}/${INSTALL_PREFIX_ADD}zlib ${GENERATE_OPTION}
-  WORKING_DIRECTORY "build/zlib/build")
+  WORKING_DIRECTORY "build/zlib/build"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 execute_process(
   COMMAND ${CMAKE_COMMAND} --build . --config ${CONFIG} --target install
-  WORKING_DIRECTORY "build/zlib/build")
+  WORKING_DIRECTORY "build/zlib/build"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 
 # libpng
 
@@ -39,7 +45,9 @@ file(DOWNLOAD
 file(MAKE_DIRECTORY "build/libpng/src")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -E tar -xf ${CMAKE_CURRENT_SOURCE_DIR}/download/libpng-1.6.37.tar.xz
-  WORKING_DIRECTORY "build/libpng/src")
+  WORKING_DIRECTORY "build/libpng/src"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 execute_process(
   COMMAND ${CMAKE_COMMAND} -E copy patched_file/libpng-1.6.37/CMakeLists.txt build/libpng/src/libpng-1.6.37)
 
@@ -48,10 +56,14 @@ execute_process(
   COMMAND ${CMAKE_COMMAND} ../src/libpng-1.6.37 -DPNG_SHARED=off -DPNG_STATIC=on -DPNG_TESTS=off
   -DPNG_DEBUG=off -DPNGARG=off -DPNG_BUILD_ZLIB=off -DZLIB_INCLUDE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/zlib/include -DZLIB_LIBRARY=${CMAKE_CURRENT_SOURCE_DIR}/zlib/lib ${GENERATE_OPTION}
   -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_SOURCE_DIR}/${INSTALL_PREFIX_ADD}libpng
-  WORKING_DIRECTORY "build/libpng/build")
+  WORKING_DIRECTORY "build/libpng/build"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 execute_process(
   COMMAND ${CMAKE_COMMAND} --build . --config ${CONFIG} --target install
-  WORKING_DIRECTORY "build/libpng/build")
+  WORKING_DIRECTORY "build/libpng/build"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 
 # libjpeg-turbo
 
@@ -65,15 +77,21 @@ file(DOWNLOAD
 file(MAKE_DIRECTORY "build/libjpeg/src")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -E tar -xf ${CMAKE_CURRENT_SOURCE_DIR}/download/libjpeg-turbo-2.0.4.tar.gz
-  WORKING_DIRECTORY "build/libjpeg/src")
+  WORKING_DIRECTORY "build/libjpeg/src"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 
 file(MAKE_DIRECTORY "build/libjpeg/build")
 execute_process(
   COMMAND ${CMAKE_COMMAND} ../src/libjpeg-turbo-2.0.4 -DENABLE_SHARED=OFF -DWITH_SIMD=OFF
   -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_SOURCE_DIR}/${INSTALL_PREFIX_ADD}libjpeg-turbo ${GENERATE_OPTION}
-  WORKING_DIRECTORY "build/libjpeg/build")
+  WORKING_DIRECTORY "build/libjpeg/build"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 
 execute_process(
   COMMAND ${CMAKE_COMMAND} --build . --config ${CONFIG} --target install
-  WORKING_DIRECTORY "build/libjpeg/build")
+  WORKING_DIRECTORY "build/libjpeg/build"
+  COMMAND_ERROR_IS_FATAL ANY
+  )
 

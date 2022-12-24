@@ -30,6 +30,7 @@ if(NOT EXISTS "list_asm.cmake")
     COMMAND ${PERL} generate.pl
     RESULT_VARIABLE rv
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "execute error ${PERL}")

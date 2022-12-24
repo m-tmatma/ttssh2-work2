@@ -20,6 +20,7 @@ if ("${PERL}" STREQUAL "PERL-NOTFOUND")
     execute_process(
       COMMAND ${CMAKE_COMMAND} -P getperl.cmake
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/buildtools
+      COMMAND_ERROR_IS_FATAL ANY
     )
     set(PERL ${CMAKE_CURRENT_LIST_DIR}/perl/perl/bin/perl.exe)
   else()

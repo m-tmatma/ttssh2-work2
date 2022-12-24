@@ -4,6 +4,7 @@ set(SRC_DIR "${CMAKE_CURRENT_LIST_DIR}/putty")
 
 execute_process(
   COMMAND ${CMAKE_COMMAND} -DTARGET=putty -P download.cmake
+  COMMAND_ERROR_IS_FATAL ANY
 )
 
 if(${SRC_DIR}/LICENSE IS_NEWER_THAN ${CMAKE_CURRENT_LIST_DIR}/doc_help/cJSON-LICENSE.txt)

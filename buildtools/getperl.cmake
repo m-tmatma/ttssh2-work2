@@ -20,6 +20,7 @@ if(NOT EXISTS ${INSTALL_DIR}/perl/bin/perl.exe)
   execute_process(
     COMMAND ${CMAKE_COMMAND} -E tar "xvf" ${DOWN_DIR}/${SRC_ARC}
     WORKING_DIRECTORY ${INSTALL_DIR}
+    COMMAND_ERROR_IS_FATAL ANY
     )
 
 endif()

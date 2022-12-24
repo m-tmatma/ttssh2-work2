@@ -157,6 +157,7 @@ if(NOT EXISTS "${CMAKE_BINARY_DIR}/build_config.cmake")
     COMMAND ${PERL} svnrev.pl --svn "${Subversion_SVN_EXECUTABLE}" --git "${GIT_EXECUTABLE}" --root ${CMAKE_SOURCE_DIR} --header ${CMAKE_BINARY_DIR}/teraterm/ttpdlg/svnversion.h --cmake ${CMAKE_BINARY_DIR}/build_config.cmake
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/buildtools/svnrev
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
     )
   if(NOT rv STREQUAL "0")
     message(FATAL_ERROR "execute error ${PERL}")

@@ -36,45 +36,54 @@ message("perl=${PERL}")
 message("oniguruma")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -DCMAKE_GENERATOR=${CMAKE_GENERATOR} ${ARCHITECTURE_OPTION} -P buildoniguruma.cmake
+  COMMAND_ERROR_IS_FATAL ANY
   )
 message("zlib")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -DCMAKE_GENERATOR=${CMAKE_GENERATOR} ${ARCHITECTURE_OPTION} -P buildzlib.cmake
+  COMMAND_ERROR_IS_FATAL ANY
   )
 message("putty")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -P buildputty.cmake
+  COMMAND_ERROR_IS_FATAL ANY
   )
 message("SFMT")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -DCMAKE_GENERATOR=${CMAKE_GENERATOR} ${ARCHITECTURE_OPTION} -P buildsfmt.cmake
+  COMMAND_ERROR_IS_FATAL ANY
   )
 if(BUILD_SSL_LIBRARY)
   if(BUILD_OPENSSL1)
     message("openssl 1.1")
     execute_process(
       COMMAND ${CMAKE_COMMAND} -DCMAKE_GENERATOR=${CMAKE_GENERATOR} ${ARCHITECTURE_OPTION} -P openssl11.cmake
+      COMMAND_ERROR_IS_FATAL ANY
     )
   endif(BUILD_OPENSSL1)
   if(BUILD_OPENSSL3)
     message("openssl 3")
     execute_process(
       COMMAND ${CMAKE_COMMAND} -DCMAKE_GENERATOR=${CMAKE_GENERATOR} ${ARCHITECTURE_OPTION} -P openssl3.cmake
+      COMMAND_ERROR_IS_FATAL ANY
     )
   endif(BUILD_OPENSSL3)
 endif(BUILD_SSL_LIBRARY)
 message("cJSON")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -P buildcjson.cmake
+  COMMAND_ERROR_IS_FATAL ANY
   )
 message("argon2")
 execute_process(
   COMMAND ${CMAKE_COMMAND} -P buildargon2.cmake
+  COMMAND_ERROR_IS_FATAL ANY
   )
 if(BUILD_SSL_LIBRARY)
   message("libressl")
   execute_process(
     COMMAND ${CMAKE_COMMAND} -DCMAKE_GENERATOR=${CMAKE_GENERATOR} ${ARCHITECTURE_OPTION} -P buildlibressl.cmake
+    COMMAND_ERROR_IS_FATAL ANY
     )
 endif(BUILD_SSL_LIBRARY)
 

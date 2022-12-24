@@ -95,11 +95,13 @@ function(build TARGET_CMAKE_COMMAND SRC_DIR BUILD_DIR INSTALL_DIR GENERATE_OPTIO
     COMMAND ${TARGET_CMAKE_COMMAND} ${SRC_DIR} -G "Unix Makefiles" ${GENERATE_OPTIONS}
     WORKING_DIRECTORY ${BUILD_DIR}
     RESULT_VARIABLE rv
+    COMMAND_ERROR_IS_FATAL ANY
   )
   #message("rv=${rv}")
   execute_process(
     COMMAND ${TARGET_CMAKE_COMMAND} --build . --config release --target install -- -j
     WORKING_DIRECTORY ${BUILD_DIR}
+    COMMAND_ERROR_IS_FATAL ANY
   )
 endfunction()
 
