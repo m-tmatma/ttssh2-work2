@@ -107,6 +107,9 @@ jobs:
       MINGW_CC: ${{ matrix.MINGW_CC }}
       MINGW_CXX: ${{ matrix.MINGW_CXX }}
       VERBOSE: ${{ matrix.VERBOSE }}
+      #GITREV:  ${{ github.sha }}
+      GITHUB_ACTIONS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      VERSION: 5.0
 
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.runs-on }}
@@ -128,6 +131,14 @@ jobs:
       - name: curl setup-x86_64.exe
         run: curl -OL https://www.cygwin.com/setup-x86_64.exe
         shell: cmd
+
+      - name: set GITREV
+        run: |
+          $GITREV = $Env:GITHUB_SHA.Substring(0, 10)
+          Write-Host "$Env:GITHUB_ENV"
+          Write-Host "GITREV=$GITREV"
+          Write-Host "GITREV=$GITREV"  6>> $Env:GITHUB_ENV
+        shell: powershell
 
       # see https://github.com/appveyor/build-images/blob/d208f5ca6495d22ced83d5d39a0c612ceffc36d7/scripts/Windows/install_cygwin.ps1#L10-L16
       - name: install cygwin
@@ -250,10 +261,21 @@ jobs:
         run: dir /b /s /a-d *.exe
         shell: cmd
 
-      - name: artifacts
+      - name: artifacts svnversion/cmake
+        if: always()
         uses: actions/upload-artifact@v3
         with:
-          name: artifacts-build${{github.run_number}}-id${{github.run_id}}-${{ matrix.ARTIFACT_SUFFIX }}
+          name: artifacts-svnversion-build${{github.run_number}}-id${{github.run_id}}-${{ env.GITREV }}-${{ matrix.ARTIFACT_SUFFIX }}
+          path: |
+            build/**/svnversion.h
+            build/**/build_config.cmake
+          # See https://github.com/actions/upload-artifact#retention-period
+          retention-days: 2
+
+      - name: artifacts installer
+        uses: actions/upload-artifact@v3
+        with:
+          name: artifacts-installer-build${{github.run_number}}-id${{github.run_id}}-${{ env.GITREV }}-${{ matrix.ARTIFACT_SUFFIX }}
           path: |
             build/snapshot*.exe
           # See https://github.com/actions/upload-artifact#retention-period

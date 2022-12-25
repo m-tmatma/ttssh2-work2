@@ -78,7 +78,10 @@ static int SetDropdown(HWND hDlg, int running_version)
 	char version_label[32];
 
 	GetDlgItemText(hDlg, IDC_VERSION_LABEL, version_label, sizeof(version_label));
-#if defined(SVNVERSION)
+#if defined(GITREV)
+	asprintf(&str, "%s (current version teraterm:%d.%d, ttxcheckupdate:%d.%d %s %s)", version_label, version_major,
+			 version_minor, TT_VERSION_MAJOR, TT_VERSION_MINOR, BRANCH_NAME, GITREV);
+#elif defined(SVNVERSION)
 	asprintf(&str, "%s (current version teraterm:%d.%d, ttxcheckupdate:%d.%d %s r%d)", version_label, version_major,
 			 version_minor, TT_VERSION_MAJOR, TT_VERSION_MINOR, BRANCH_NAME, SVNVERSION);
 #else

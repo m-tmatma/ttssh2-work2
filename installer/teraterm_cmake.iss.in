@@ -35,7 +35,11 @@ AppName={#AppName}
 #ifdef SETUP_RELEASE
 AppVersion=@VERSION@
 #else
+#ifdef GITREV
+AppVersion=@VERSION@+ snapshot-@GITREV@-@DATE@
+#else
 AppVersion=@VERSION@+ snapshot-r@SVNVERSION@-@DATE@
+#endif
 #endif
 LicenseFile=@PROJECT_SOURCE_DIR@/installer\release\license.txt
 DefaultDirName={pf}\teraterm5
